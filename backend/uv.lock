@@ -721,6 +721,18 @@ wheels = [
 ]
 
 [[package]]
+name = "joserfc"
+version = "1.7.7"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/bd/15/48ff246732232d35ee234228def22b52455fcc55577f06146602399a29b0/joserfc-1.7.7.tar.gz", hash = "sha256:471d0fd12a5a0d1c0942de280f39efe6f597878315033270b504d4d006d25510", size = 237446, upload-time = "2026-10-19T00:30:29.974Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/df/9f/934db284aa22f37af59708e382903860d4b81329c137b1b0ed2745daeb65/joserfc-1.7.7-py3-none-any.whl", hash = "sha256:06979cfbab78bc802f14c0358f32969826cc26720e13cb38926ffdc86bc0cb2c", size = 71758, upload-time = "2026-10-19T00:30:28.498Z" },
+]
+
+[[package]]
 name = "jsonschema"
 version = "4.26.0"
 source = { registry = "https://pypi.org/simple" }
@@ -971,9 +983,16 @@ wheels = [
 ]
 
 [package.optional-dependencies]
+cognitoidp = [
+    { name = "joserfc" },
+]
 dynamodb = [
     { name = "docker" },
     { name = "py-partiql-parser" },
+]
+s3 = [
+    { name = "py-partiql-parser" },
+    { name = "pyyaml" },
 ]
 
 [[package]]
@@ -1584,7 +1603,7 @@ dev = [
     { name = "hypothesis" },
     { name = "import-linter" },
     { name = "jsonschema" },
-    { name = "moto", extra = ["dynamodb"] },
+    { name = "moto", extra = ["cognitoidp", "dynamodb", "s3"] },
     { name = "mypy" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pytest" },
@@ -1605,7 +1624,7 @@ dev = [
     { name = "hypothesis", specifier = ">=6.112" },
     { name = "import-linter", specifier = ">=2.1" },
     { name = "jsonschema", specifier = ">=4.23" },
-    { name = "moto", extras = ["dynamodb"], specifier = ">=5" },
+    { name = "moto", extras = ["cognitoidp", "dynamodb", "s3", "sesv2"], specifier = ">=5" },
     { name = "mypy", specifier = ">=1.13" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2" },
     { name = "pytest", specifier = ">=8.3" },

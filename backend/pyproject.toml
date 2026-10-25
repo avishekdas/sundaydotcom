@@ -18,7 +18,7 @@ dev = [
   "mypy>=1.13",
   "import-linter>=2.1",
   "boto3>=1.35",
-  "moto[dynamodb]>=5",
+  "moto[cognitoidp,dynamodb,s3,sesv2]>=5",
   "jsonschema>=4.23",
 ]
 
