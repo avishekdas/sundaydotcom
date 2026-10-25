@@ -2,7 +2,7 @@
 
 | Spike | Status | Report |
 |---|---|---|
-| S-1 Data API & JSONB performance | running | `s1/REPORT.md` |
+| S-1 Data API & JSONB performance | **PASS** (no fallback needed) | `s1/REPORT.md` |
 | S-2a WAF challenge | pending | |
 | S-3 cold start & sizing | pending | |
 | S-4 recompute & per-viewer | pending | |
