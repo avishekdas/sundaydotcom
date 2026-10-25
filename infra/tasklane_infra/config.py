@@ -19,6 +19,7 @@ class Stage:
     worker_schedule_tz: str = "UTC"
     dead_man_hours: int = 0
     alert_email: str | None = None
+    test_hooks: bool = False  # fake clock / fault injection endpoints; refused for prod (plan M0b-8)
     # D-039: dev has CloudTrail only; GuardDuty / Security Hub / Config come with a prod stage
     security_baseline: tuple[str, ...] = (
         "cloudtrail",
@@ -40,4 +41,5 @@ DEV = Stage(
     dead_man_hours=14,  # 12 quiet hours overnight + 2 missed daytime runs
     alert_email="avishekdas.cool@gmail.com",  # D-040
     security_baseline=("cloudtrail",),
+    test_hooks=True,
 )

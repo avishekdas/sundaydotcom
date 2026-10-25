@@ -16,7 +16,8 @@ export function App() {
     loadConfig()
       .then(async (c) => {
         setCfg(c);
-        setSession(await refresh(c));
+        if (c.auth === "dev" && c.devToken) setSession({ accessToken: c.devToken, expiresAt: Number.MAX_SAFE_INTEGER });
+        else setSession(await refresh(c));
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setBooting(false));

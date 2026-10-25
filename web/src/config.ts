@@ -5,6 +5,8 @@ export interface AppConfig {
   apiBase: string;
   wsPath: string;
   stage: string;
+  auth?: "cognito" | "dev"; // "dev" only from the local devserver (make dev)
+  devToken?: string;
 }
 
 export async function loadConfig(): Promise<AppConfig> {

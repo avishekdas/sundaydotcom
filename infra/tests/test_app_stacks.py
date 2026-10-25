@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import aws_cdk as cdk
-from aws_cdk.assertions import Match
+from aws_cdk.assertions import Match, Template
 
 from tests.conftest import template
 
@@ -99,3 +99,25 @@ def test_api_deploys_through_a_canary_with_automatic_rollback(app: cdk.App) -> N
     integ = next(iter(t.find_resources("AWS::ApiGatewayV2::Integration").values()))["Properties"]
     alias_ids = set(t.find_resources("AWS::Lambda::Alias"))
     assert integ["IntegrationUri"] in [{"Ref": a} for a in alias_ids]
+
+
+def test_test_hooks_are_never_enabled_in_prod() -> (
+    None
+):  # plan M0b-8: fake clock / fault injection absent from prod
+    import dataclasses
+
+    import pytest
+
+    from tasklane_infra.app_builder import build
+    from tasklane_infra.config import DEV
+
+    with pytest.raises(ValueError, match="test hooks"):
+        build(cdk.App(), dataclasses.replace(DEV, name="prod", test_hooks=True))
+    a = cdk.App()
+    build(a, dataclasses.replace(DEV, name="prod", test_hooks=False, account="123456789012"))
+    for s in a.node.children:
+        if isinstance(s, cdk.Stack):
+            for fn in Template.from_stack(s).find_resources("AWS::Lambda::Function").values():
+                env = fn["Properties"].get("Environment", {}).get("Variables", {})
+                assert not {"TL_FAULT_INJECTION", "TL_FAKE_CLOCK"} & set(env)
+                assert env.get("STAGE", "prod") == "prod"

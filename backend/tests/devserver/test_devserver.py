@@ -1,4 +1,5 @@
 """`make dev` local stack (DL-9): devserver shim → real api handler, InProcessBus, local WebSocket."""
+
 from __future__ import annotations
 
 import pytest
@@ -35,7 +36,11 @@ def test_websocket_receives_pushes_after_a_write(client: TestClient) -> None:
         r = client.patch("/api/v1/items/1001/values", json={"values": {"note": "local"}}, headers=h)
         assert r.status_code == 200
         msg = ws.receive_json()
-        assert msg["type"] == "item.values_changed" and msg["item_id"] == "1001" and msg["values"] == {"note": "local"}
+        assert (
+            msg["type"] == "item.values_changed"
+            and msg["item_id"] == "1001"
+            and msg["values"] == {"note": "local"}
+        )
 
 
 def test_websocket_rejects_a_bad_ticket(client: TestClient) -> None:

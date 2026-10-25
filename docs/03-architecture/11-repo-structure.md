@@ -37,7 +37,7 @@ monday-clone/                         (git root; product name "Tasklane")
 ```
 **Layered module contract (import-linter, no cycles) — DX-6:**
 ```
-platform  →  identity  →  schema  →  computed  →  workmgmt  →  {collab, automation, insights, crm, forms}  →  api / workers / devserver
+platform  →  identity  →  schema  →  computed  →  workmgmt  →  {collab, automation, insights, crm, forms}  →  api / workers  →  devserver (local only)
 ```
 - `schema` (shared kernel): column types & codecs, settings models, QuerySpec, board-schema read model.
 - `computed`: pure formula/mirror engine + SQL emitters (no DB access of its own).

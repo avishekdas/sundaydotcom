@@ -63,7 +63,8 @@ root_package = "tasklane"
 name = "Layered architecture (arch 11)"
 type = "layers"
 layers = [
-  "tasklane.api | tasklane.workers | tasklane.devserver",
+  "tasklane.devserver",  # local composition root: wires api + workers in-process (DL-9); never deployed
+  "tasklane.api | tasklane.workers",
   "tasklane.collab | tasklane.automation | tasklane.insights | tasklane.crm | tasklane.forms",
   "tasklane.workmgmt",
   "tasklane.computed",

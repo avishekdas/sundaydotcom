@@ -18,6 +18,8 @@ from tasklane_infra.stacks.workers import WorkersStack
 
 
 def build(app: cdk.App, stage: Stage) -> None:
+    if stage.name == "prod" and stage.test_hooks:
+        raise ValueError("test hooks (fake clock, fault injection) must never be enabled in prod")
     env = cdk.Environment(account=stage.account, region=stage.region)
     name = lambda s: f"tasklane-{stage.name}-{s}"  # noqa: E731
     net = NetworkStack(app, name("network"), stack_name=name("network"), env=env)
