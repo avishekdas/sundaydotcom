@@ -7,7 +7,7 @@ import pytest
 from psycopg import errors
 from psycopg.rows import dict_row
 
-from tasklane.platform.db import PsycopgDb
+from tasklane.platform.db import StrictDataApiFake as PsycopgDb  # Data API typing (int8 params)
 from tasklane.workers.scheduler_tick import tick
 
 pytestmark = pytest.mark.integration

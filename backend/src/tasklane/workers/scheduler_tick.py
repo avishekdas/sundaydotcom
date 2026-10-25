@@ -22,7 +22,7 @@ def tick(db: Db) -> dict[str, Any]:
     dropped = 0
     for parent, keep in RETENTION_DAYS.items():
         rows = db.query(
-            "select tl.drop_partitions_older_than(:p::regclass, :k) as n", {"p": parent, "k": keep}
+            "select tl.drop_partitions_older_than(:p::regclass, :k::int) as n", {"p": parent, "k": keep}
         )
         dropped += int(rows[0]["n"])
     return {"created": created, "dropped": dropped}

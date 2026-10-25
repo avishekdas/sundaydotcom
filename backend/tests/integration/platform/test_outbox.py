@@ -11,7 +11,7 @@ import psycopg
 import pytest
 
 from tasklane.platform.clock import FakeClock
-from tasklane.platform.db import PsycopgDb
+from tasklane.platform.db import StrictDataApiFake as PsycopgDb  # Data API typing (int8 params)
 from tasklane.platform.outbox import OutboxEvent, ack, publish_after_commit, sweep, to_entry
 
 pytestmark = pytest.mark.integration

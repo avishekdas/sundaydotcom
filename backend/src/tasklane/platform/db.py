@@ -178,6 +178,13 @@ class StrictDataApiFake(PsycopgDb):
         validate_sql(sql)
         validate_params(sql, params)
 
+    def _adapt(self, params: Params | None) -> dict[str, Any]:
+        """Type parameters the way the Data API does: integers are longValue (int8), text is text."""
+        from psycopg.types.numeric import Int8
+
+        out = super()._adapt(params)
+        return {k: Int8(v) if isinstance(v, int) and not isinstance(v, bool) else v for k, v in out.items()}
+
     def query(self, sql: str, params: Params | None = None) -> list[Row]:
         self._check(sql, params)
         rows = super().query(sql, params)
