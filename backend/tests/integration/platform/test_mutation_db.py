@@ -1,4 +1,5 @@
 """Mutation builder against PostgreSQL 18.6 through the StrictDataApiFake (arch 03 §3.5; PE-9)."""
+
 from __future__ import annotations
 
 import threading
@@ -28,8 +29,12 @@ def uri(pg_uri: str) -> Iterator[str]:
     apply_migrations(u, MIGRATIONS)
     with psycopg.connect(u, autocommit=True) as c:
         c.execute("insert into tl.workspaces (id, name, kind, position) values (1, 'W', 'open', 'a')")
-        c.execute(f"insert into tl.boards (id, workspace_id, name, kind, position) values ({BOARD}, 1, 'B', 'main', 'a')")
-        c.execute(f"insert into tl.groups (id, board_id, title, color, position) values (100, {BOARD}, 'G', 'blue', 'a')")
+        c.execute(
+            f"insert into tl.boards (id, workspace_id, name, kind, position) values ({BOARD}, 1, 'B', 'main', 'a')"
+        )
+        c.execute(
+            f"insert into tl.groups (id, board_id, title, color, position) values (100, {BOARD}, 'G', 'blue', 'a')"
+        )
         c.execute(f"""insert into tl.items (id, board_id, group_id, name, position, created_by_type, values)
                       values ({ITEM}, {BOARD}, 100, 'Deal', 'a', 'user', '{{"owner": {{"p": [{{"t": "u", "id": 42}}]}}}}')""")
         c.execute(f"""insert into tl.items (id, board_id, group_id, parent_item_id, name, position, created_by_type)
@@ -37,18 +42,35 @@ def uri(pg_uri: str) -> Iterator[str]:
     yield u
 
 
-def write(db: StrictDataApiFake, item: int = ITEM, *, value: object = {"i": 1}, epoch: int = 0,
-          assign: str | None = None, uid: int = 42) -> object:
-    m = set_cell_value(item_id=item, column_id="status", value=value, assign_column_id=assign, actor_type="user",
-                       actor_id=uid, cached_epoch=epoch, mutation_id="m-" + uuid.uuid4().hex,
-                       event_id=str(uuid.uuid4()))
+def write(
+    db: StrictDataApiFake,
+    item: int = ITEM,
+    *,
+    value: object = {"i": 1},
+    epoch: int = 0,
+    assign: str | None = None,
+    uid: int = 42,
+) -> object:
+    m = set_cell_value(
+        item_id=item,
+        column_id="status",
+        value=value,
+        assign_column_id=assign,
+        actor_type="user",
+        actor_id=uid,
+        cached_epoch=epoch,
+        mutation_id="m-" + uuid.uuid4().hex,
+        event_id=str(uuid.uuid4()),
+    )
     return run(db, m)
 
 
 def counts(uri: str) -> dict[str, int]:
     with psycopg.connect(uri) as c:
-        return {t: c.execute(f"select count(*) from tl.{t}").fetchone()[0]  # type: ignore[index]
-                for t in ("activity_log", "board_changes", "outbox", "recompute_pending")}
+        return {
+            t: c.execute(f"select count(*) from tl.{t}").fetchone()[0]  # type: ignore[index]
+            for t in ("activity_log", "board_changes", "outbox", "recompute_pending")
+        }
 
 
 def test_cell_write_updates_value_and_writes_all_side_rows_in_one_statement(uri: str) -> None:
@@ -113,9 +135,13 @@ def test_concurrent_writes_serialize_without_lost_updates(uri: str) -> None:
     assert not errors
     with psycopg.connect(uri) as c:
         (ver,) = c.execute(f"select version from tl.items where id = {ITEM}").fetchone()  # type: ignore[misc]
-        versions = sorted(r[0] for r in c.execute("select (payload->>'version')::int from tl.outbox").fetchall())
+        versions = sorted(
+            r[0] for r in c.execute("select (payload->>'version')::int from tl.outbox").fetchall()
+        )
         chain = c.execute("select before, after from tl.activity_log order by id").fetchall()
     assert ver == n + 1 and versions == list(range(2, n + 2))
     # every write saw the previous write's value as its pre-image: the before/after chain is unbroken
     afters = {str(a) for _, a in chain}
-    assert sum(1 for b, _ in chain if b is None) == 1 and all(str(b) in afters for b, _ in chain if b is not None)
+    assert sum(1 for b, _ in chain if b is None) == 1 and all(
+        str(b) in afters for b, _ in chain if b is not None
+    )
