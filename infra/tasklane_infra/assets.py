@@ -38,7 +38,7 @@ def _deps_dir() -> Path:
         if ln.strip() and not ln.startswith("#") and ln.split("==")[0].strip().lower() not in RUNTIME_PROVIDED
     ]
     (out.parent / f"{out.name}.txt").write_text("\n".join(keep) + "\n")
-    subprocess.run(
+    res = subprocess.run(
         [
             "uv",
             "pip",
@@ -54,9 +54,12 @@ def _deps_dir() -> Path:
             "-r",
             str(out.parent / f"{out.name}.txt"),
         ],
-        check=True,
+        check=False,
         capture_output=True,
+        text=True,
     )
+    if res.returncode != 0:
+        raise RuntimeError(f"installing Lambda dependencies failed:\n{res.stderr[-3000:]}")
     (out / ".complete").write_text("ok")
     return out
 

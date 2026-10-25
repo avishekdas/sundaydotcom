@@ -5,7 +5,7 @@ log=$(mktemp)
 "$@" 2>&1 | tee "$log"
 rc=${PIPESTATUS[0]}
 if [ "$rc" -ne 0 ]; then
-  msg=$(grep -vE "^\s*$" "$log" | grep -iE "error|fail|exception|denied|invalid" | tail -25 | cut -c1-300 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
+  msg=$(grep -vE "^\s*$" "$log" | tail -40 | cut -c1-300 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
   echo "::error title=$1 failed::${msg}"
 fi
 exit "$rc"
