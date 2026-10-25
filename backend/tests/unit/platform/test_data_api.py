@@ -13,6 +13,23 @@ from tasklane.platform.data_api import DataApiDb, DatabaseResuming
 from tasklane.platform.db import DataApiRuleViolation, Json
 
 
+# Parameter names each rds-data operation accepts (botocore service model) — the fake rejects others.
+ALLOWED = {
+    "execute_statement": {"resourceArn", "secretArn", "database", "sql", "parameters", "transactionId",
+                          "formatRecordsAs", "includeResultMetadata", "continueAfterTimeout", "schema",
+                          "resultSetOptions"},
+    "begin_transaction": {"resourceArn", "secretArn", "database", "schema"},
+    "commit_transaction": {"resourceArn", "secretArn", "transactionId"},
+    "rollback_transaction": {"resourceArn", "secretArn", "transactionId"},
+}
+
+
+def _check(op: str, kw: dict[str, Any]) -> None:
+    unknown = set(kw) - ALLOWED[op]
+    if unknown:
+        raise TypeError(f"{op}: unknown parameters {sorted(unknown)}")
+
+
 class FakeClient:
     def __init__(self, responses: list[Any] | None = None) -> None:
         self.calls: list[tuple[str, dict[str, Any]]] = []
@@ -27,18 +44,22 @@ class FakeClient:
         return default
 
     def execute_statement(self, **kw: Any) -> dict[str, Any]:
+        _check("execute_statement", kw)
         self.calls.append(("execute_statement", kw))
         return self._next({"formattedRecords": "[]", "numberOfRecordsUpdated": 0})
 
     def begin_transaction(self, **kw: Any) -> dict[str, Any]:
+        _check("begin_transaction", kw)
         self.calls.append(("begin_transaction", kw))
         return {"transactionId": "tx-1"}
 
     def commit_transaction(self, **kw: Any) -> dict[str, Any]:
+        _check("commit_transaction", kw)
         self.calls.append(("commit_transaction", kw))
         return {}
 
     def rollback_transaction(self, **kw: Any) -> dict[str, Any]:
+        _check("rollback_transaction", kw)
         self.calls.append(("rollback_transaction", kw))
         return {}
 
