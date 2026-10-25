@@ -40,7 +40,7 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "S", "SIM", "RUF"]
-ignore = ["S101"]
+ignore = ["S101", "E501"]  # line length is the formatter's job
 
 [tool.mypy]
 strict = true

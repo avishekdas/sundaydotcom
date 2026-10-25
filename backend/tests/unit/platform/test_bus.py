@@ -1,10 +1,13 @@
 """InProcessBus (arch 10 §10.3, DX-8): sync mode is deterministic; chaos mode reorders, duplicates and delays
 but honours FIFO groups — so flow tests prove consumers are idempotent and order-tolerant."""
+
 from tasklane.platform.bus import Event, InProcessBus
 
 
 def _events(n: int, group: str | None = None) -> list[Event]:
-    return [Event(type="item.values_changed", event_id=f"e{i}", payload={"i": i}, group=group) for i in range(n)]
+    return [
+        Event(type="item.values_changed", event_id=f"e{i}", payload={"i": i}, group=group) for i in range(n)
+    ]
 
 
 def test_sync_mode_delivers_in_order_exactly_once() -> None:

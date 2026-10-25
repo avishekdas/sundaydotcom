@@ -1,4 +1,5 @@
 """Clock port (arch 10 §10.5): fakeable time for T4/DST, nightly jobs and timezone rules (C8, D-017)."""
+
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -19,7 +20,7 @@ def test_fake_clock_advances() -> None:
 
 def test_fake_clock_rejects_naive_datetimes() -> None:
     with pytest.raises(ValueError, match="aware"):
-        FakeClock(datetime(2026, 1, 1))  # noqa: DTZ001
+        FakeClock(datetime(2026, 1, 1))
 
 
 @pytest.mark.ac("AC-C8-3")
@@ -33,5 +34,13 @@ def test_local_date_uses_the_given_timezone() -> None:
 @pytest.mark.ac("AC-C8-2")
 def test_local_minute_follows_dst() -> None:
     # 09:00 New York is 13:00Z before the DST change (1 Nov 2026) and 14:00Z after it
-    assert local_minute(datetime(2026, 10, 30, 13, 0, tzinfo=UTC), "America/New_York") == (date(2026, 10, 30), 9, 0)
-    assert local_minute(datetime(2026, 11, 2, 14, 0, tzinfo=UTC), "America/New_York") == (date(2026, 11, 2), 9, 0)
+    assert local_minute(datetime(2026, 10, 30, 13, 0, tzinfo=UTC), "America/New_York") == (
+        date(2026, 10, 30),
+        9,
+        0,
+    )
+    assert local_minute(datetime(2026, 11, 2, 14, 0, tzinfo=UTC), "America/New_York") == (
+        date(2026, 11, 2),
+        9,
+        0,
+    )
