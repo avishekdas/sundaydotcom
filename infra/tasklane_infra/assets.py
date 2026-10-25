@@ -7,6 +7,8 @@ hash of ``backend/uv.lock``; boto3 is left to the runtime. The tasklane package 
 from __future__ import annotations
 
 import hashlib
+import os
+import re
 import shutil
 import subprocess
 from functools import cache
@@ -26,8 +28,19 @@ def _deps_dir() -> Path:
         shutil.rmtree(out)
     out.mkdir(parents=True)
     req = subprocess.run(
-        ["uv", "export", "--frozen", "--no-dev", "--no-hashes", "--no-emit-project", "--no-header"],
+        [
+            "uv",
+            "export",
+            "--frozen",
+            "--no-dev",
+            "--no-hashes",
+            "--no-emit-project",
+            "--no-header",
+            "--color",
+            "never",
+        ],
         cwd=REPO / "backend",
+        env={**os.environ, "NO_COLOR": "1"},
         check=True,
         capture_output=True,
         text=True,
@@ -35,7 +48,7 @@ def _deps_dir() -> Path:
     keep = [
         ln
         for ln in req.splitlines()
-        if ln.strip() and not ln.startswith("#") and ln.split("==")[0].strip().lower() not in RUNTIME_PROVIDED
+        if re.match(r"^[A-Za-z0-9]", ln) and ln.split("==")[0].strip().lower() not in RUNTIME_PROVIDED
     ]
     (out.parent / f"{out.name}.txt").write_text("\n".join(keep) + "\n")
     res = subprocess.run(
