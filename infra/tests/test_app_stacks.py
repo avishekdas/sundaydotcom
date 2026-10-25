@@ -85,9 +85,17 @@ def test_edge_serves_spa_api_and_ws_from_one_distribution(app: cdk.App) -> None:
 def test_api_deploys_through_a_canary_with_automatic_rollback(app: cdk.App) -> None:  # PE-6
     t = template(app, "tasklane-dev-api")
     t.has_resource_properties("AWS::Lambda::Alias", {"Name": "live"})
-    t.has_resource_properties("AWS::CodeDeploy::DeploymentGroup", {
-        "DeploymentConfigName": "CodeDeployDefault.LambdaCanary10Percent5Minutes",
-        "AutoRollbackConfiguration": {"Enabled": True, "Events": Match.array_with(["DEPLOYMENT_FAILURE", "DEPLOYMENT_STOP_ON_ALARM"])},
-        "AlarmConfiguration": Match.object_like({"Enabled": True})})
+    t.has_resource_properties(
+        "AWS::CodeDeploy::DeploymentGroup",
+        {
+            "DeploymentConfigName": "CodeDeployDefault.LambdaCanary10Percent5Minutes",
+            "AutoRollbackConfiguration": {
+                "Enabled": True,
+                "Events": Match.array_with(["DEPLOYMENT_FAILURE", "DEPLOYMENT_STOP_ON_ALARM"]),
+            },
+            "AlarmConfiguration": Match.object_like({"Enabled": True}),
+        },
+    )
     integ = next(iter(t.find_resources("AWS::ApiGatewayV2::Integration").values()))["Properties"]
-    assert "Alias" in str(integ["IntegrationUri"]) or "live" in str(integ["IntegrationUri"])
+    alias_ids = set(t.find_resources("AWS::Lambda::Alias"))
+    assert integ["IntegrationUri"] in [{"Ref": a} for a in alias_ids]

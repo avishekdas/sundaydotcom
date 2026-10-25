@@ -7,6 +7,8 @@ from aws_cdk import aws_apigatewayv2 as apigw
 from aws_cdk import aws_apigatewayv2_authorizers as authz
 from aws_cdk import aws_apigatewayv2_integrations as integ
 from aws_cdk import aws_cloudwatch as cw
+from aws_cdk import aws_codedeploy as codedeploy
+from aws_cdk import aws_lambda as lambda_
 from constructs import Construct
 
 from tasklane_infra.config import Stage
@@ -51,6 +53,29 @@ class ApiStack(cdk.Stack):
             cdk.aws_iam.PolicyStatement(actions=["events:PutEvents"], resources=[messaging.bus.event_bus_arn])
         )
         realtime.table.grant_read_write_data(fn)
+        # Deploy safety (PE-6): traffic goes to the `live` alias; CodeDeploy shifts 10 % for 5 minutes and rolls
+        # back automatically when the alias error alarm fires.
+        live = lambda_.Alias(self, "Live", alias_name="live", version=fn.current_version)
+        canary_alarm = cw.Alarm(
+            self,
+            "LiveErrors",
+            metric=live.metric_errors(period=cdk.Duration.minutes(1)),
+            threshold=0,
+            comparison_operator=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            evaluation_periods=1,
+            treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
+            alarm_description="api live alias errors during/after a deploy — runbook: "
+            "https://github.com/avishekdas/sundaydotcom/blob/main/ops/runbooks/api.md",
+        )
+        canary_alarm.add_alarm_action(cdk.aws_cloudwatch_actions.SnsAction(messaging.alerts))
+        codedeploy.LambdaDeploymentGroup(
+            self,
+            "Canary",
+            alias=live,
+            deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES,
+            alarms=[canary_alarm],
+            auto_rollback=codedeploy.AutoRollbackConfig(failed_deployment=True, deployment_in_alarm=True),
+        )
         jwt = authz.HttpJwtAuthorizer(
             "Jwt", identity.issuer, jwt_audience=[identity.client.user_pool_client_id]
         )
@@ -64,7 +89,7 @@ class ApiStack(cdk.Stack):
         self.http_api.add_routes(
             path="/api/v1/{proxy+}",
             methods=[apigw.HttpMethod.ANY],
-            integration=integ.HttpLambdaIntegration("ApiIntegration", fn),
+            integration=integ.HttpLambdaIntegration("ApiIntegration", live),
         )
         alarm(
             self,
@@ -77,3 +102,4 @@ class ApiStack(cdk.Stack):
             topic=messaging.alerts,
         )
         self.function = fn
+        self.live = live

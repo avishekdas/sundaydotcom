@@ -214,4 +214,6 @@ def _env_deps() -> Deps:
 
 
 def handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    if os.environ.get("TL_FAULT_INJECTION") == "1" and os.environ.get("STAGE") != "prod":
+        raise RuntimeError("fault injection: canary rollback rehearsal (ops/rehearse_canary_rollback.md)")
     return handle(event, _env_deps())
