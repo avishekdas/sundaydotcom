@@ -1,4 +1,5 @@
 """migrate λ (PE-4): reads secrets, applies migrations via the Db port, enables role logins (M0A-3)."""
+
 from __future__ import annotations
 
 import json
@@ -11,7 +12,7 @@ class FakeSecrets:
     def __init__(self, values: dict[str, dict[str, str]]) -> None:
         self.values = values
 
-    def get_secret_value(self, SecretId: str) -> dict[str, Any]:  # noqa: N803 (boto3 casing)
+    def get_secret_value(self, SecretId: str) -> dict[str, Any]:
         return {"SecretString": json.dumps(self.values[SecretId])}
 
 
@@ -21,8 +22,12 @@ def test_handler_wires_db_migrations_and_role_passwords(monkeypatch: Any) -> Non
     monkeypatch.setenv("ADMIN_SECRET_ARN", "arn:admin")
     monkeypatch.setenv("DB_NAME", "tasklane")
     monkeypatch.setenv("ROLE_SECRET_ARNS", json.dumps({"tl_api_rw": "arn:api", "tl_reader": "arn:reader"}))
-    secrets = FakeSecrets({"arn:api": {"username": "tl_api_rw", "password": "p1"},
-                           "arn:reader": {"username": "tl_reader", "password": "p2"}})
+    secrets = FakeSecrets(
+        {
+            "arn:api": {"username": "tl_api_rw", "password": "p1"},
+            "arn:reader": {"username": "tl_reader", "password": "p2"},
+        }
+    )
 
     def fake_apply(db: Any, directory: Any) -> list[str]:
         seen["db"] = db

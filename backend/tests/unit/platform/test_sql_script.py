@@ -1,11 +1,15 @@
 """Splitting a migration file into single statements for the Data API (one statement per call, M0A-6)."""
+
 from __future__ import annotations
 
 from tasklane.platform.sql_script import split_statements
 
 
-def test_splits_plain_statements_and_drops_empty_and_comments() -> None:
-    assert split_statements("create table a (x int);\n\n-- c;\nselect 1 ; ;") == ["create table a (x int)", "select 1"]
+def test_splits_plain_statements_drops_empty_keeps_leading_comments() -> None:
+    assert split_statements("create table a (x int);\n\n-- c;\nselect 1 ; ;") == [
+        "create table a (x int)",
+        "-- c;\nselect 1",
+    ]
 
 
 def test_semicolons_inside_literals_identifiers_and_comments_do_not_split() -> None:

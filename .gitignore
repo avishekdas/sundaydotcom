@@ -12,3 +12,4 @@ cdk.out/
 .coverage
 spikes/**/*.zip
 .DS_Store
+infra/.build/

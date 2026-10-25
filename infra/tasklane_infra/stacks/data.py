@@ -53,7 +53,7 @@ class DataStack(cdk.Stack):
                 f"Secret-{role}",
                 username=role,
                 secret_name=f"tasklane/{stage.name}/db/{role}",
-                exclude_characters="\"@/\\'`$",
+                exclude_characters="\"@/\\'`$:%;",
             )
             self.role_secrets[role] = secret
             ssm.StringParameter(

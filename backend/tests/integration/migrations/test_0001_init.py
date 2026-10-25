@@ -232,8 +232,11 @@ def test_role_logins_are_enabled_with_passwords(db_uri: str) -> None:
 
     ensure_role_logins(PsycopgDb(db_uri), {"tl_reader": "s3cr3t-x", "tl_api_rw": "o'neil"})
     with psycopg.connect(db_uri) as c:
-        rows = dict(c.execute(
-            "select rolname, rolcanlogin from pg_roles where rolname in ('tl_reader', 'tl_api_rw')").fetchall())
+        rows = dict(
+            c.execute(
+                "select rolname, rolcanlogin from pg_roles where rolname in ('tl_reader', 'tl_api_rw')"
+            ).fetchall()
+        )
     assert rows == {"tl_reader": True, "tl_api_rw": True}
     with pytest.raises(ValueError, match="unknown role"):
         ensure_role_logins(PsycopgDb(db_uri), {"postgres": "x"})

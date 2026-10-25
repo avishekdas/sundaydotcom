@@ -1,4 +1,5 @@
 """DataApiDb adapter (ADR-002): parameter encoding, JSON records, transactions, resume retry (M0A-9/14)."""
+
 from __future__ import annotations
 
 import json
@@ -49,16 +50,30 @@ class ResumingError(Exception):
 
 
 def db(client: FakeClient, **kw: Any) -> DataApiDb:
-    return DataApiDb(client, resource_arn="arn:cluster", secret_arn="arn:secret", database="tasklane",
-                     sleep=lambda _s: None, **kw)
+    return DataApiDb(
+        client,
+        resource_arn="arn:cluster",
+        secret_arn="arn:secret",  # noqa: S106 (an ARN, not a password)
+        database="tasklane",
+        sleep=lambda _s: None,
+        **kw,
+    )
 
 
 def test_parameters_are_encoded_with_type_hints() -> None:
     c = FakeClient()
     db(c).query(
         "select :a, :b, :c, :d, :e, :f, :g, :h",
-        {"a": 1, "b": "x", "c": True, "d": None, "e": Decimal("1.50"), "f": date(2026, 1, 2),
-         "g": datetime(2026, 1, 2, 3, 4, 5, 600000, tzinfo=UTC), "h": Json({"k": [1]})},
+        {
+            "a": 1,
+            "b": "x",
+            "c": True,
+            "d": None,
+            "e": Decimal("1.50"),
+            "f": date(2026, 1, 2),
+            "g": datetime(2026, 1, 2, 3, 4, 5, 600000, tzinfo=UTC),
+            "h": Json({"k": [1]}),
+        },
     )
     p = {x["name"]: x for x in c.calls[0][1]["parameters"]}
     assert p["a"]["value"] == {"longValue": 1}
@@ -67,14 +82,18 @@ def test_parameters_are_encoded_with_type_hints() -> None:
     assert p["d"]["value"] == {"isNull": True}
     assert p["e"] == {"name": "e", "value": {"stringValue": "1.50"}, "typeHint": "DECIMAL"}
     assert p["f"] == {"name": "f", "value": {"stringValue": "2026-01-02"}, "typeHint": "DATE"}
-    assert p["g"] == {"name": "g", "value": {"stringValue": "2026-01-02 03:04:05.600000"}, "typeHint": "TIMESTAMP"}
+    assert p["g"] == {
+        "name": "g",
+        "value": {"stringValue": "2026-01-02 03:04:05.600000"},
+        "typeHint": "TIMESTAMP",
+    }
     assert p["h"] == {"name": "h", "value": {"stringValue": '{"k":[1]}'}, "typeHint": "JSON"}
     assert c.calls[0][1]["formatRecordsAs"] == "JSON"
 
 
 def test_naive_datetime_is_rejected() -> None:
     with pytest.raises(DataApiRuleViolation):
-        db(FakeClient()).query("select :t", {"t": datetime(2026, 1, 1)})  # noqa: DTZ001
+        db(FakeClient()).query("select :t", {"t": datetime(2026, 1, 1)})
 
 
 def test_rules_are_enforced_before_calling_aws() -> None:

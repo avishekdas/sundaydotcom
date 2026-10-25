@@ -6,6 +6,7 @@ import aws_cdk as cdk
 
 from tasklane_infra.config import Stage
 from tasklane_infra.stacks.data import DataStack
+from tasklane_infra.stacks.migrate import MigrateStack
 from tasklane_infra.stacks.network import NetworkStack
 
 
@@ -14,6 +15,7 @@ def build(app: cdk.App, stage: Stage) -> None:
     name = lambda s: f"tasklane-{stage.name}-{s}"  # noqa: E731
     net = NetworkStack(app, name("network"), stack_name=name("network"), env=env)
     data = DataStack(app, name("data"), stack_name=name("data"), env=env, stage=stage, vpc=net.vpc)
-    for s in (net, data):
+    mig = MigrateStack(app, name("migrate"), stack_name=name("migrate"), env=env, stage=stage, data=data)
+    for s in (net, data, mig):
         cdk.Tags.of(s).add("project", "tasklane")
         cdk.Tags.of(s).add("stage", stage.name)
