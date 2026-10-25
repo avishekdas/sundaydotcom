@@ -12,7 +12,6 @@ import pytest
 from tasklane.platform.data_api import DataApiDb, DatabaseResuming
 from tasklane.platform.db import DataApiRuleViolation, Json
 
-
 # Parameter names each rds-data operation accepts (botocore service model) — the fake rejects others.
 ALLOWED = {
     "execute_statement": {
