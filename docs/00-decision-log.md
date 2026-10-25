@@ -32,3 +32,7 @@
 | D-028 | 2026-10-25 | Local test database: `embedded-postgres` 18.6 wheel (Docker is not available in the Cowork VM); CI uses a PostgreSQL 18 container. TOAST lz4 is set via the Aurora cluster parameter `default_toast_compression`, not in DDL (the embedded build lacks lz4) | M0a setup |
 | D-029 | 2026-10-25 | Forged WAF headers on `/forms/*` are blocked by a priority-0 WAF rule (header key starts with `x-amzn-waf-`), not stripped by a CloudFront Function — S-2a showed WAF runs before viewer-request Functions, so the Function deleted WAF's own header. Bot Control Common level is sufficient | S-2a |
 | D-030 | 2026-10-25 | Aurora minimum 2 ACU floor is **not** needed for latency (S-1: 100k first page ≈ 0.5 s at 1 ACU); whether it is needed under concurrent load is decided at the M2 load gate | S-1 |
+| D-031 | 2026-10-25 | **User:** only one environment for now — **dev** in account 920824005451, us-east-1. Staging/prod accounts and the Organization are deferred; PE-3 promotion and the M9 "north star in prod" gate are re-planned when a second stage is added | User choice |
+| D-032 | 2026-10-25 | **User:** source repo `github.com/avishekdas/sundaydotcom`; CDK deploys run from GitHub Actions via OIDC | User choice |
+| D-033 | 2026-10-25 | **User:** domain `tasklane.avishekdas.dev` (dev stage: `dev.tasklane.avishekdas.dev`), delegated from the existing Route 53 zone `avishekdas.dev` | User choice |
+| D-034 | 2026-10-25 | Lambda concurrent-executions increase to 1,000 requested (Service Quotas request f0cf8839…, PENDING) | Lead-time #6 |
