@@ -65,5 +65,15 @@ Format: Context · Decision · Alternatives · Consequences. Status of all: **Pr
 **Consequences:** one place to reason about D-012/D-015/D-018/D-020; slightly more complex SQL on every read.
 
 ## ADR-015 Board change log for client sync (AR-18)
-**Decision:** `tl.board_changes` (bigserial seq) written in each mutation statement; clients resync with `since_seq` and a 200-entry overlap; 24 h retention.
+**Decision:** `tl.board_changes` written in each mutation statement; clients resync with an **`xid8` cursor** (`since_xmin`, below the current snapshot xmin — PERF-4/FR-1, 03 §3.3a), `seq` is only a realtime gap hint; 24 h retention, `db_generation` forces a full reload after restore.
 **Alternatives:** timestamp-based `since` (misses late commits), logical replication (not serverless-friendly).
+
+## Appendix A — Spike outcomes (M0a, 2026-10-25)
+Reports: `spikes/s1`, `s2a`, `s3`, `s4` `/REPORT.md` (indexed in `03-architecture/spikes/README.md`).
+| ADR | Spike | Outcome | Effect on the decision |
+|---|---|---|---|
+| ADR-001/002 | S-1 Data API & JSONB | **PASS** — 100k-item board first page ≈ 66 + 421 ms at 1 ACU; cell write 79 ms p95; GIN on `(board_id, values)` ≈ 10× on filters | Data API kept, no RDS Proxy fallback; `items_values_gin` kept; single-pass extraction and `item_sort_keys` rejected; 2 ACU floor not needed for latency (D-030, re-checked at M2 load gate) |
+| ADR-012 | S-3 cold start | **PASS** — cold ≤ ≈ 1.15 s, warm ≈ 13 ms | No SnapStart / provisioned concurrency for now |
+| ADR-009 | S-4 recompute & per-viewer | **PASS** — per-viewer fold 227 ms p95 (join 293 ms) on 20k; 1,000 bulk edits recomputed in 160 ms; drift 0 | Partial aggregates + fold kept; no wider materialization needed |
+| 07 §7.4 (SEC-7) | S-2a WAF challenge | **PASS with change** — WAF runs before viewer-request CloudFront Functions, so the Function stripped WAF's own header | Forged `x-amzn-waf-*` headers blocked by a priority-0 WAF rule (D-029); Bot Control Common level suffices; SDK `getToken()` path re-verified in M6 |
+| ADR-013 | S-2b Cognito interplay | pending — first story of M1 | D-022 confirmed or adjusted before K7 ACs |
