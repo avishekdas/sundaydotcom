@@ -70,7 +70,7 @@ def test_changed_applied_migration_is_rejected(db_uri: str, tmp_path: Path) -> N
 
 def test_account_singleton_with_db_generation(db_uri: str) -> None:
     with psycopg.connect(db_uri, autocommit=True) as c:
-        c.execute("insert into tl.account (name, date_format, week_start) values ('Acme', 'YYYY-MM-DD', 1)")
+        c.execute("update tl.account set name = 'Acme'")
         assert c.execute("select db_generation, perm_epoch from tl.account").fetchone() == (1, 0)
         with pytest.raises(errors.CheckViolation):
             c.execute("insert into tl.account (id, name, date_format, week_start) values (2, 'X', 'd', 1)")
@@ -152,3 +152,54 @@ def test_tables_are_owned_by_migrator(db_uri: str) -> None:
             r[0] for r in c.execute("select tableowner from pg_tables where schemaname = 'tl'").fetchall()
         }
     assert owners == {"tl_migrator"}
+
+
+# --- M0a review fixes (docs/04-plan/milestone-reviews/M0a.md) -------------------------------------
+
+
+def test_audit_writer_inserts_with_default_id(db_uri: str) -> None:  # M0A-1
+    with as_role(db_uri, "tl_audit_writer") as c:
+        c.execute("insert into tl.audit_events (kind) values ('sign_in')")
+
+
+@pytest.mark.parametrize("role", ["tl_api_rw", "tl_worker_forms", "tl_reader", "tl_audit_writer"])
+def test_only_worker_may_create_partitions(db_uri: str, role: str) -> None:  # M0A-2
+    with as_role(db_uri, role) as c, pytest.raises(errors.InsufficientPrivilege):
+        c.execute("select tl.ensure_daily_partitions('tl.outbox', current_date, 1)")
+
+
+def test_partition_function_is_bounded(db_uri: str) -> None:  # M0A-2
+    with as_role(db_uri, "tl_worker") as c:
+        assert c.execute("select tl.ensure_daily_partitions('tl.outbox', current_date, 3)").fetchone() is not None
+        with pytest.raises(errors.RaiseException):
+            c.execute("select tl.ensure_daily_partitions('tl.outbox', current_date, 400)")
+        with pytest.raises(errors.RaiseException):
+            c.execute("select tl.ensure_daily_partitions('tl.users', current_date, 1)")
+
+
+def test_api_cannot_delete_singletons_or_write_audit_directly(db_uri: str) -> None:  # M0A-4
+    with as_role(db_uri, "tl_api_rw") as c:
+        with pytest.raises(errors.InsufficientPrivilege):
+            c.execute("delete from tl.account")
+        with pytest.raises(errors.InsufficientPrivilege):
+            c.execute("delete from tl.outbox")
+
+
+def test_activity_log_is_written_with_monthly_partitions(db_uri: str) -> None:  # M0A-5
+    with as_role(db_uri, "tl_api_rw") as c:
+        c.execute("insert into tl.activity_log (board_id, actor_type, kind) values (1, 'user', 'item.created')")
+    with as_role(db_uri, "tl_worker_forms") as c:
+        c.execute("insert into tl.activity_log (board_id, actor_type, kind) values (1, 'form', 'item.created')")
+
+
+def test_account_row_is_seeded(db_uri: str) -> None:  # M0A-16: the epoch guard reads it
+    with psycopg.connect(db_uri) as c:
+        assert c.execute("select count(*) from tl.account").fetchone() == (1,)
+
+
+def test_log_partitions_cover_a_week_ahead(db_uri: str) -> None:  # M0A-15
+    with psycopg.connect(db_uri) as c:
+        row = c.execute(
+            "select count(*) from pg_inherits where inhparent = 'tl.board_changes'::regclass"
+        ).fetchone()
+    assert row is not None and row[0] >= 8
