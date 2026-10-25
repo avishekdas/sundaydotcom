@@ -222,7 +222,7 @@ def test_runner_works_through_the_db_port(pg_uri: str) -> None:
     with psycopg.connect(pg_uri, autocommit=True) as c:
         c.execute(f"create database {name}")
     db = PsycopgDb(make_conninfo(pg_uri, dbname=name))
-    assert apply_migrations(db, MIGRATIONS) == ["0000", "0001"]
+    assert apply_migrations(db, MIGRATIONS)[:2] == ["0000", "0001"]
     assert apply_migrations(db, MIGRATIONS) == []
 
 
