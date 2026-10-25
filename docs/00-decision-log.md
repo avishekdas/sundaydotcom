@@ -40,3 +40,6 @@
 | D-036 | 2026-10-25 | Walking skeleton (M0b): Cognito MFA **optional**, sign-in straight against Cognito (`USER_PASSWORD_AUTH`) from the SPA; M1 replaces this with the auth proxy and MFA required (K7, PE-17) | M0b scope |
 | D-037 | 2026-10-25 | **User:** dev singleton workers (outbox-sweeper, scheduler-tick) run **every 60 min, paused 20:00–08:00 New York time** (EventBridge Scheduler `cron(0 8-19 * * ? *)`, tz America/New_York) so Aurora can auto-pause; dead-man alarm = no tick for 14 h. Dev consequence: a failed first publish may be republished up to ~1 h later (overnight: next morning). Other stages keep `rate(1 minute)` | Cost (D-024) |
 | D-038 | 2026-10-25 | **User:** keep the CloudFront default address for dev (no custom domain for now; supersedes the domain part of D-033) | D-035 |
+| D-039 | 2026-10-25 | **User:** dev security baseline = **CloudTrail only** (account's first trail: management events free). GuardDuty, Security Hub and Config are added with a prod stage (P-launch) | SEC-20, cost |
+| D-040 | 2026-10-25 | **User:** alarms are emailed to avishekdas.cool@gmail.com (SNS email subscription; AWS sends a confirmation email that must be accepted) | PE-7 |
+| D-041 | 2026-10-25 | **User:** WAF on the dev distribution deferred to M6 (public forms), where the challenge rules from S-2a are needed | SEC-7, cost |

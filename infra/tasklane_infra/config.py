@@ -17,7 +17,15 @@ class Stage:
     # Aurora cluster can auto-pause (min 0 ACU) overnight and between runs.
     worker_schedule: str = "rate(1 minute)"
     worker_schedule_tz: str = "UTC"
-    dead_man_hours: int = 0  # 0 → 5-minute dead-man window; >0 → alarm after this many hours without a tick
+    dead_man_hours: int = 0
+    alert_email: str | None = None
+    # D-039: dev has CloudTrail only; GuardDuty / Security Hub / Config come with a prod stage
+    security_baseline: tuple[str, ...] = (
+        "cloudtrail",
+        "guardduty",
+        "securityhub",
+        "config",
+    )  # 0 → 5-minute dead-man window; >0 → alarm after this many hours without a tick
 
 
 DEV = Stage(
@@ -30,4 +38,6 @@ DEV = Stage(
     worker_schedule="cron(0 8-19 * * ? *)",
     worker_schedule_tz="America/New_York",
     dead_man_hours=14,  # 12 quiet hours overnight + 2 missed daytime runs
+    alert_email="avishekdas.cool@gmail.com",  # D-040
+    security_baseline=("cloudtrail",),
 )

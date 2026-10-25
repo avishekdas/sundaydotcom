@@ -12,6 +12,7 @@ from tasklane_infra.stacks.identity import IdentityStack
 from tasklane_infra.stacks.messaging import MessagingStack
 from tasklane_infra.stacks.migrate import MigrateStack
 from tasklane_infra.stacks.network import NetworkStack
+from tasklane_infra.stacks.observability import ObservabilityStack
 from tasklane_infra.stacks.realtime import RealtimeStack
 from tasklane_infra.stacks.workers import WorkersStack
 
@@ -45,8 +46,20 @@ def build(app: cdk.App, stage: Stage) -> None:
     edge = EdgeStack(
         app, name("edge"), stack_name=name("edge"), env=env, stage=stage, api=api, realtime=rt, identity=idn
     )
+    obs = ObservabilityStack(
+        app,
+        name("observability"),
+        stack_name=name("observability"),
+        env=env,
+        stage=stage,
+        data=data,
+        messaging=msg,
+        workers=wrk,
+        api=api,
+        realtime=rt,
+    )
     for code in (rt, api):
         code.add_dependency(mig)
-    for s in (net, data, mig, msg, wrk, idn, rt, api, edge):
+    for s in (net, data, mig, msg, wrk, idn, rt, api, edge, obs):
         cdk.Tags.of(s).add("project", "tasklane")
         cdk.Tags.of(s).add("stage", stage.name)

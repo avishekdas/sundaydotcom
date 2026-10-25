@@ -7,6 +7,7 @@ from aws_cdk import aws_cloudwatch as cw
 from aws_cdk import aws_events as events
 from aws_cdk import aws_events_targets as targets
 from aws_cdk import aws_sns as sns
+from aws_cdk import aws_sns_subscriptions as subs
 from aws_cdk import aws_sqs as sqs
 from constructs import Construct
 
@@ -21,6 +22,8 @@ class MessagingStack(cdk.Stack):
         self.alerts = sns.Topic(
             self, "Alerts", topic_name=f"{p}-alerts"
         )  # subscriptions: ops/runbooks/README
+        if stage.alert_email:
+            self.alerts.add_subscription(subs.EmailSubscription(stage.alert_email))
         self.bus = events.EventBus(self, "Bus", event_bus_name=p)
 
         def dlq(id_: str, name: str) -> sqs.Queue:
