@@ -1,0 +1,34 @@
+name: e2e-dev
+# Tier B north star on the deployed dev stage (plan §1.2): runs after every successful deploy.
+on:
+  workflow_run: { workflows: [deploy-dev], types: [completed], branches: [main] }
+  workflow_dispatch:
+permissions: { id-token: write, contents: read }
+concurrency: { group: e2e-dev, cancel-in-progress: false }
+jobs:
+  north-star:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-24.04
+    environment: dev
+    timeout-minutes: 20
+    defaults: { run: { working-directory: e2e } }
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: "${{ github.event.workflow_run.head_sha || github.sha }}" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::920824005451:role/tasklane-gh-deploy-dev
+          aws-region: us-east-1
+      - name: Test identity and URL
+        run: |
+          s=$(aws secretsmanager get-secret-value --secret-id tasklane/dev/test-users/a --query SecretString --output text)
+          echo "::add-mask::$(echo "$s" | jq -r .password)"
+          echo "E2E_EMAIL=$(echo "$s" | jq -r .email)" >> "$GITHUB_ENV"
+          echo "E2E_PASSWORD=$(echo "$s" | jq -r .password)" >> "$GITHUB_ENV"
+          url=$(aws cloudformation describe-stacks --stack-name tasklane-dev-edge \
+                --query "Stacks[0].Outputs[?starts_with(OutputKey,'Url')].OutputValue" --output text)
+          echo "BASE_URL=$url" >> "$GITHUB_ENV"
+      - run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
+      - run: ../scripts/ci-run.sh npx playwright test

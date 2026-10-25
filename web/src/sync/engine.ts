@@ -81,7 +81,7 @@ export class SyncEngine {
   }
 
   private async reconnect(): Promise<void> {
-    if (this.stopped) return;
+    if (this.stopped || this.paused) return;
     await this.sleep(this.reconnectDelay);
     this.reconnectDelay = Math.min(this.reconnectDelay * 2, 15_000);
     try {
@@ -110,5 +110,18 @@ export class SyncEngine {
   stop(): void {
     this.stopped = true;
     this.socket?.close();
+  }
+
+  /** Test hook (non-prod only): drop the socket and stay offline until resume(). */
+  private paused = false;
+  pause(): void {
+    this.paused = true;
+    this.socket?.close();
+  }
+
+  async resume(): Promise<void> {
+    this.paused = false;
+    await this.connect();
+    await this.gapSync();
   }
 }

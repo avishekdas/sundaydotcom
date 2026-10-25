@@ -77,4 +77,19 @@ describe("SyncEngine", () => {
     await e.gapSync();
     expect(e.order).toEqual(["1", "2", "3"]);
   });
+
+  it("pause/resume: stays offline while paused, converges on resume", async () => {
+    const srv = new FakeServer();
+    const { f, live } = sockets(srv.calls);
+    const e = new SyncEngine(srv, f, "10", async () => {});
+    await e.start();
+    e.pause();
+    live[0]!.onClose();
+    for (let k = 0; k < 10; k++) srv.write("1", "note", `n${k}`);
+    await new Promise((r) => setTimeout(r, 0));
+    expect(live.length).toBe(1);               // no reconnect while paused
+    await e.resume();
+    expect(live.length).toBe(2);
+    expect(e.store.view("1")).toMatchObject(srv.items.get("1")!);
+  });
 });

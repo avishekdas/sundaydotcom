@@ -5,7 +5,7 @@ import { Cell } from "./cells";
 
 const ROW_H = 36;
 
-export function BoardView({ api, boardId }: { api: Api; boardId: string }) {
+export function BoardView({ api, boardId, stage }: { api: Api; boardId: string; stage: string }) {
   const engine = useMemo(() => new SyncEngine(api, api.sockets(), boardId), [boardId]); // eslint-disable-line
   const [, rerender] = useReducer((x: number) => x + 1, 0);
   const [error, setError] = useState<string | null>(null);
@@ -15,6 +15,7 @@ export function BoardView({ api, boardId }: { api: Api; boardId: string }) {
 
   useEffect(() => {
     engine.onChange = rerender;
+    if (stage !== "prod") (window as unknown as { __tl?: unknown }).__tl = engine; // e2e hook (pause/resume)
     engine.start().then(() => setLive(true)).catch((e: Error) => setError(e.message));
     return () => engine.stop();
   }, [engine]);

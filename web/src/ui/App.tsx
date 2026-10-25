@@ -50,7 +50,7 @@ export function App() {
         <span className="stage">{cfg.stage}</span>
         <button className="link" onClick={() => { signOut(); setSession(null); }}>Sign out</button>
       </header>
-      <BoardView api={api} boardId={boardId} />
+      <BoardView api={api} boardId={boardId} stage={cfg.stage} />
     </div>
   );
 }
