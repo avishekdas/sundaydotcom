@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = ">=3.13"
 resolution-markers = [
     "python_full_version >= '3.15'",
@@ -77,6 +77,19 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/66/83/6607060659998f00afdea0d8375c1e6e2b7d515ab905090d9a5a02f48851/ast_serialize-0.13.1-cp39-abi3-win32.whl", hash = "sha256:4f98da562e5901d69c7dd30885594c5438f859edf354e9ac7517d188fb026c3a", size = 1131889, upload-time = "2026-10-17T00:04:12.953Z" },
     { url = "https://files.pythonhosted.org/packages/9f/6f/bafd6490fe7b355627fabe95f4417e3d02da93102c8552550eb9a0774e1e/ast_serialize-0.13.1-cp39-abi3-win_amd64.whl", hash = "sha256:ddf7cbc9c8abf70102c4a088efe154bb86bfb825b0a10e556d2b15972cf99bd7", size = 1171153, upload-time = "2026-10-17T00:04:14.362Z" },
     { url = "https://files.pythonhosted.org/packages/11/25/4235f4b375a67a37ac595bf478a5407a744eaf7b64113c1c3a5432b8d954/ast_serialize-0.13.1-cp39-abi3-win_arm64.whl", hash = "sha256:48f11d96c9ec71119612f8e79a8c55c12f2b136716d68347433c561d27a25f43", size = 1139035, upload-time = "2026-10-17T00:04:15.767Z" },
+]
+
+[[package]]
+name = "aws-lambda-powertools"
+version = "3.37.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "jmespath" },
+    { name = "typing-extensions" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/9d/40/7b964e95af5cd66c3a029aeb67a04915225edf436b296adf1a37d0dd909d/aws_lambda_powertools-3.37.0.tar.gz", hash = "sha256:eec85df216ef5e99efd2cbed01ddeebe34585b650625dabc96fdc5b471ef8fcf", size = 827593, upload-time = "2026-10-22T09:44:51.217Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/80/d8/7f3d585da96f3bb637caf6cefee0f539b47360462c632fab689793c80b38/aws_lambda_powertools-3.37.0-py3-none-any.whl", hash = "sha256:92df3f790851a30cfb5ed45ff8e11f2de9b74e60aed0169d2a6b6da2362b45fb", size = 999694, upload-time = "2026-10-22T09:44:49.366Z" },
 ]
 
 [[package]]
@@ -926,6 +939,7 @@ name = "tasklane"
 version = "0.0.1"
 source = { editable = "." }
 dependencies = [
+    { name = "aws-lambda-powertools" },
     { name = "pydantic" },
 ]
 
@@ -943,7 +957,10 @@ dev = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pydantic", specifier = ">=2.9" }]
+requires-dist = [
+    { name = "aws-lambda-powertools", specifier = ">=3.20" },
+    { name = "pydantic", specifier = ">=2.9" },
+]
 
 [package.metadata.requires-dev]
 dev = [
