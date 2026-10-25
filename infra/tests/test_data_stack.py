@@ -87,3 +87,18 @@ def test_every_resource_is_tagged_with_project_and_stage(app: cdk.App) -> None:
             )
         },
     )
+
+
+def test_data_stack_is_termination_protected(
+    app: cdk.App,
+) -> None:  # data-stack Replace/Delete gate (plan M0b-8)
+    stack = next(
+        s for s in app.node.children if isinstance(s, cdk.Stack) and s.stack_name == "tasklane-dev-data"
+    )
+    assert stack.termination_protection
+
+
+def test_role_secrets_survive_stack_deletion(app: cdk.App) -> None:
+    t = template(app, "tasklane-dev-data")
+    for name, r in t.find_resources("AWS::SecretsManager::Secret").items():
+        assert r.get("DeletionPolicy") == "Retain", name

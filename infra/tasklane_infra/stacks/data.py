@@ -63,6 +63,7 @@ class DataStack(cdk.Stack):
                 secret_name=f"tasklane/{stage.name}/db/{role}",
                 exclude_characters="\"@/\\'`$:%;",
             )
+            secret.apply_removal_policy(cdk.RemovalPolicy.RETAIN)
             self.role_secrets[role] = secret
             ssm.StringParameter(
                 self,
@@ -77,6 +78,10 @@ class DataStack(cdk.Stack):
             string_value=self.cluster.cluster_arn,
         )
         if self.cluster.secret is not None:
+            admin_secret = self.cluster.node.find_child(
+                "Secret"
+            )  # the generated master secret (not the attachment)
+            admin_secret.node.default_child.apply_removal_policy(cdk.RemovalPolicy.RETAIN)  # type: ignore[union-attr]
             ssm.StringParameter(
                 self,
                 "AdminSecretArn",
