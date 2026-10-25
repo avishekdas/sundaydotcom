@@ -187,7 +187,8 @@ class StrictDataApiFake(PsycopgDb):
 
     def query(self, sql: str, params: Params | None = None) -> list[Row]:
         self._check(sql, params)
-        rows = super().query(sql, params)
+        cur = self._run(sql, params)
+        rows = [_as_data_api_row(r, cur.description or [], self._conn) for r in cur.fetchall()]
         total = 0
         for row in rows:
             size = _row_bytes(row)
@@ -203,3 +204,49 @@ class StrictDataApiFake(PsycopgDb):
     def execute(self, sql: str, params: Params | None = None) -> int:
         self._check(sql, params)
         return super().execute(sql, params)
+
+
+# --- Data API result shapes (formatRecordsAs=JSON), observed on Aurora PG 18.6 (M0A-14) ---------------------
+
+_JSON_OIDS = {114, 3802}  # json, jsonb → JSON text
+_TEXTUAL_OIDS = {1700, 2950, 869}  # numeric, uuid, inet → string
+_UNSUPPORTED_OIDS = {1186: "interval", 5069: "xid8"}
+_TYPE_NAMES: dict[int, str] = {}
+
+
+def _type_name(conn: Any, oid: int) -> str:
+    if oid not in _TYPE_NAMES:
+        row = conn.execute("select typname from pg_type where oid = %s", (oid,)).fetchone()
+        _TYPE_NAMES[oid] = (row["typname"] if isinstance(row, dict) else row[0]) if row else ""
+    return _TYPE_NAMES[oid]
+
+
+def _as_data_api_value(v: Any, oid: int, conn: Any) -> Any:
+    if oid in _UNSUPPORTED_OIDS or _type_name(conn, oid) == "citext":
+        name = _UNSUPPORTED_OIDS.get(oid, "citext")
+        raise DataApiRuleViolation(
+            f"the Data API returns UnsupportedResultException for {name}; cast it (e.g. ::text)"
+        )
+    if v is None:
+        return None
+    if oid in _JSON_OIDS:
+        return json.dumps(v, separators=(",", ":"), default=str)
+    if oid == 869:  # inet: the Data API renders the prefix length
+        text = str(v)
+        return text if "/" in text else f"{text}/{32 if ':' not in text else 128}"
+    if oid in _TEXTUAL_OIDS:
+        return str(v)
+    if isinstance(v, datetime):
+        from datetime import UTC
+
+        naive = v.astimezone(UTC).replace(tzinfo=None) if v.tzinfo else v
+        return naive.isoformat(sep=" ")
+    if isinstance(v, date):
+        return v.isoformat()
+    if isinstance(v, Decimal):
+        return str(v)
+    return v
+
+
+def _as_data_api_row(row: Row, description: Any, conn: Any) -> Row:
+    return {col.name: _as_data_api_value(row[col.name], col.type_code, conn) for col in description}

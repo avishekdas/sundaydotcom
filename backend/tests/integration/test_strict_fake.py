@@ -27,7 +27,8 @@ def test_roundtrip_types(db: StrictDataApiFake) -> None:
         {"id": 1, "v": Json({"c": {"l": 3}}), "n": Decimal("12.50"), "s": "x"},
     )
     rows = db.query("select id, v, n, s from t_fake where id = :id", {"id": 1})
-    assert rows == [{"id": 1, "v": {"c": {"l": 3}}, "n": Decimal("12.50"), "s": "x"}]
+    # Data API JSON records: jsonb as JSON text, numeric as string (see test_result_shapes_match_the_data_api)
+    assert rows == [{"id": 1, "v": '{"c":{"l":3}}', "n": "12.50", "s": "x"}]
 
 
 def test_json_set_param_idiom_works(db: StrictDataApiFake) -> None:
@@ -86,16 +87,32 @@ def test_result_shapes_match_the_data_api(pg_uri: str) -> None:
     from tasklane.platform.db import DataApiRuleViolation, StrictDataApiFake
 
     db = StrictDataApiFake(pg_uri)
+    db.execute("create extension if not exists citext")
     row = db.query(
         """select 1::int as i4, 2::bigint as i8, 1.50::numeric as num, 1.5::float8 as f8, true as b,
                   '2026-10-25 23:44:22.659344+00'::timestamptz as ts, '2026-01-02 03:04:05'::timestamp as tsnaive,
                   '2026-10-25'::date as d, '{"a":[1]}'::jsonb as j, '{"a":1}'::json as js, array['x','y'] as arr,
                   array[1,2]::bigint[] as iarr, '3ed3cf2f-3d0d-4229-b69a-7a113b338132'::uuid as u, null::text as n,
-                  '1.2.3.4'::inet as inet, 1::smallint as small""")[0]
-    assert row == {"i4": 1, "i8": 2, "num": "1.50", "f8": 1.5, "b": True, "ts": "2026-10-25 23:44:22.659344",
-                   "tsnaive": "2026-01-02 03:04:05", "d": "2026-10-25", "j": '{"a": [1]}', "js": '{"a":1}',
-                   "arr": ["x", "y"], "iarr": [1, 2], "u": "3ed3cf2f-3d0d-4229-b69a-7a113b338132", "n": None,
-                   "inet": "1.2.3.4/32", "small": 1}
+                  '1.2.3.4'::inet as inet, 1::smallint as small"""
+    )[0]
+    assert row == {
+        "i4": 1,
+        "i8": 2,
+        "num": "1.50",
+        "f8": 1.5,
+        "b": True,
+        "ts": "2026-10-25 23:44:22.659344",
+        "tsnaive": "2026-01-02 03:04:05",
+        "d": "2026-10-25",
+        "j": '{"a":[1]}',
+        "js": '{"a":1}',
+        "arr": ["x", "y"],
+        "iarr": [1, 2],
+        "u": "3ed3cf2f-3d0d-4229-b69a-7a113b338132",
+        "n": None,
+        "inet": "1.2.3.4/32",
+        "small": 1,
+    }
     for expr in ("'1 day'::interval", "pg_current_xact_id()", "'x'::citext"):
-        with _pytest.raises(DataApiRuleViolation, match="unsupported"):
+        with _pytest.raises(DataApiRuleViolation, match=r"(?i)unsupported"):
             db.query(f"select {expr} as v")
