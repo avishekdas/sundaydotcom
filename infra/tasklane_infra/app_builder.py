@@ -5,10 +5,14 @@ from __future__ import annotations
 import aws_cdk as cdk
 
 from tasklane_infra.config import Stage
+from tasklane_infra.stacks.api import ApiStack
 from tasklane_infra.stacks.data import DataStack
+from tasklane_infra.stacks.edge import EdgeStack
+from tasklane_infra.stacks.identity import IdentityStack
 from tasklane_infra.stacks.messaging import MessagingStack
 from tasklane_infra.stacks.migrate import MigrateStack
 from tasklane_infra.stacks.network import NetworkStack
+from tasklane_infra.stacks.realtime import RealtimeStack
 from tasklane_infra.stacks.workers import WorkersStack
 
 
@@ -23,6 +27,26 @@ def build(app: cdk.App, stage: Stage) -> None:
         app, name("workers"), stack_name=name("workers"), env=env, stage=stage, data=data, messaging=msg
     )
     wrk.add_dependency(mig)  # code stacks deploy after the migrate stack (the pipeline migrates in between)
-    for s in (net, data, mig, msg, wrk):
+    idn = IdentityStack(app, name("identity"), stack_name=name("identity"), env=env, stage=stage)
+    rt = RealtimeStack(
+        app, name("realtime"), stack_name=name("realtime"), env=env, stage=stage, data=data, messaging=msg
+    )
+    api = ApiStack(
+        app,
+        name("api"),
+        stack_name=name("api"),
+        env=env,
+        stage=stage,
+        data=data,
+        identity=idn,
+        messaging=msg,
+        realtime=rt,
+    )
+    edge = EdgeStack(
+        app, name("edge"), stack_name=name("edge"), env=env, stage=stage, api=api, realtime=rt, identity=idn
+    )
+    for code in (rt, api):
+        code.add_dependency(mig)
+    for s in (net, data, mig, msg, wrk, idn, rt, api, edge):
         cdk.Tags.of(s).add("project", "tasklane")
         cdk.Tags.of(s).add("stage", stage.name)

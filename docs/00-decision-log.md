@@ -36,3 +36,5 @@
 | D-032 | 2026-10-25 | **User:** source repo `github.com/avishekdas/sundaydotcom`; CDK deploys run from GitHub Actions via OIDC | User choice |
 | D-033 | 2026-10-25 | **User:** domain `tasklane.avishekdas.dev` (dev stage: `dev.tasklane.avishekdas.dev`), delegated from the existing Route 53 zone `avishekdas.dev` | User choice |
 | D-034 | 2026-10-25 | Lambda concurrent-executions increase to 1,000 — **approved** the same day (now 1,000); singleton workers use reserved concurrency 1 | Lead-time #6 |
+| D-035 | 2026-10-25 | `avishekdas.dev` is not registered (public DNS NXDOMAIN although a Route 53 zone exists). Dev uses the CloudFront default domain until the user registers a domain; `Stage.domain = None` switches custom domain + ACM off | Lead-time #1 |
+| D-036 | 2026-10-25 | Walking skeleton (M0b): Cognito MFA **optional**, sign-in straight against Cognito (`USER_PASSWORD_AUTH`) from the SPA; M1 replaces this with the auth proxy and MFA required (K7, PE-17) | M0b scope |

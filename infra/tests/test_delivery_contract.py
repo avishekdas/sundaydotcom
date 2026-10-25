@@ -8,7 +8,7 @@ from aws_cdk.assertions import Match
 
 from tests.conftest import template
 
-STACKS = ["tasklane-dev-messaging", "tasklane-dev-workers"]
+STACKS = ["tasklane-dev-messaging", "tasklane-dev-workers", "tasklane-dev-realtime", "tasklane-dev-api"]
 
 
 def all_resources(app: cdk.App, rtype: str) -> dict[str, dict]:  # type: ignore[type-arg]

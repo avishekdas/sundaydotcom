@@ -60,3 +60,11 @@ def test_asset_contains_package_and_migrations() -> None:
     assert (root / "tasklane" / "workers" / "migrate.py").exists()
     assert (root / "tasklane" / "migrations_sql" / "0001_init.sql").exists()
     assert not list(root.rglob("__pycache__"))
+
+
+def test_asset_bundles_third_party_wheels_for_arm64() -> None:
+    root = Path(backend_asset())
+    assert (root / "aws_lambda_powertools").is_dir() and (root / "pydantic").is_dir()
+    so = list((root / "pydantic_core").glob("*.so"))
+    assert so and "aarch64" in so[0].name
+    assert not (root / "boto3").exists()  # provided by the runtime
