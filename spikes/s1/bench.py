@@ -71,7 +71,7 @@ select :board * 1000000 + g, :board, :board * 10 + (g % 4), lpad(g::text, 8, '0'
        case when c <= 10 then jsonb_build_object('l', (g * c) % 6)
             when c <= 20 then to_jsonb(((g * 7919 + c * 104729) % 100000)::text)
             when c <= 30 then to_jsonb(md5((g * c)::text) || ' ' || md5(g::text))
-            when c <= 40 then jsonb_build_object('d', (date '2026-01-01' + ((g + c) % 365))::text)
+            when c <= 40 then jsonb_build_object('d', (date '2026-01-01' + ((g + c) % 365)::int)::text)
             when c <= 50 then jsonb_build_object('p', jsonb_build_array(jsonb_build_object('t','u','id', (g + c) % 50)))
             else jsonb_build_object('l', jsonb_build_array((g + c) % 12, (g * c) % 12)) end as v
      from generate_series(1, :ncols) c) x)
@@ -93,7 +93,7 @@ Q_IDS_BASELINE = f"""select i.id, i.group_id from items i where {FILTER_BASE}
 Q_IDS_SINGLEPASS = """select i.id, i.group_id from items i
   cross join lateral jsonb_to_record(i.values) as r(c1 jsonb, c11 text, c12 text, c41 jsonb)
   where i.board_id = :board and i.state = 'active'
-    and (r.c1 @> '{"l":1}' or r.c1 @> '{"l":2}') and r.c11::numeric > 20000 and r.c41 @> '[{"id":7}]'
+    and (r.c1 @> '{"l":1}' or r.c1 @> '{"l":2}') and r.c11::numeric > 20000 and r.c41 @> '{"p":[{"id":7}]}'
   order by i.group_id, r.c12::numeric desc nulls last, i.id limit 20000"""
 
 Q_IDS_SORTKEYS = f"""select i.id, i.group_id from items i
