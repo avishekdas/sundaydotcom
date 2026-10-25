@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import Any
 
 from tasklane.platform.db import Db
@@ -25,3 +26,11 @@ def tick(db: Db) -> dict[str, Any]:
         )
         dropped += int(rows[0]["n"])
     return {"created": created, "dropped": dropped}
+
+
+def handler(event: dict[str, Any], context: Any, *, rds_client: Any = None) -> dict[str, Any]:
+    from tasklane.workers._env import db_from_env
+
+    out = tick(db_from_env(rds_client))
+    print(json.dumps({"metric": "scheduler.tick", **out}))  # heartbeat for the dead-man alarm
+    return out
