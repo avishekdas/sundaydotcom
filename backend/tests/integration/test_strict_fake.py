@@ -1,0 +1,59 @@
+"""StrictDataApiFake must behave like the RDS Data API on the rules that bite (AR-4, AR-21, AR-24)."""
+from __future__ import annotations
+
+from collections.abc import Iterator
+from decimal import Decimal
+
+import pytest
+
+from tasklane.platform.db import DataApiRuleViolation, Json, StrictDataApiFake
+
+pytestmark = pytest.mark.integration
+
+
+@pytest.fixture
+def db(pg_uri: str) -> Iterator[StrictDataApiFake]:
+    d = StrictDataApiFake(pg_uri)
+    d.execute("drop table if exists t_fake")
+    d.execute("create table t_fake (id bigint primary key, v jsonb, n numeric, s text)")
+    yield d
+    d.close()
+
+
+def test_roundtrip_types(db: StrictDataApiFake) -> None:
+    db.execute("insert into t_fake values (:id, :v::jsonb, :n, :s)",
+               {"id": 1, "v": Json({"c": {"l": 3}}), "n": Decimal("12.50"), "s": "x"})
+    rows = db.query("select id, v, n, s from t_fake where id = :id", {"id": 1})
+    assert rows == [{"id": 1, "v": {"c": {"l": 3}}, "n": Decimal("12.50"), "s": "x"}]
+
+
+def test_json_set_param_idiom_works(db: StrictDataApiFake) -> None:
+    for i in (1, 2, 3):
+        db.execute("insert into t_fake (id) values (:id)", {"id": i})
+    rows = db.query("select id from t_fake where id in "
+                    "(select jsonb_array_elements_text(:ids::jsonb)::bigint) order by id", {"ids": Json([1, 3])})
+    assert [r["id"] for r in rows] == [1, 3]
+
+
+def test_row_over_64kb_is_rejected(db: StrictDataApiFake) -> None:
+    db.execute("insert into t_fake (id, s) values (1, repeat('x', 70000))")
+    with pytest.raises(DataApiRuleViolation, match="64 KB"):
+        db.query("select s from t_fake")
+
+
+def test_response_over_1mib_is_rejected(db: StrictDataApiFake) -> None:
+    db.execute("insert into t_fake (id, s) select g, repeat('x', 60000) from generate_series(1, 20) g")
+    with pytest.raises(DataApiRuleViolation, match="1 MiB"):
+        db.query("select s from t_fake")
+
+
+def test_transaction_rolls_back_on_error(db: StrictDataApiFake) -> None:
+    with pytest.raises(RuntimeError), db.transaction() as tx:
+        tx.execute("insert into t_fake (id) values (1)")
+        raise RuntimeError("boom")
+    assert db.query("select count(*) as c from t_fake") == [{"c": 0}]
+
+
+def test_rules_apply_inside_transactions(db: StrictDataApiFake) -> None:
+    with pytest.raises(DataApiRuleViolation), db.transaction() as tx:
+        tx.query("select 1 where 1 = any(:p)", {"p": Json([1])})

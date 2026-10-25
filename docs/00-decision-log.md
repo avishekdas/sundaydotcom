@@ -1,0 +1,29 @@
+# Decision Log
+
+| # | Date | Decision | Rationale / source |
+|---|---|---|---|
+| D-001 | 2026-10-24 | Scope = monday Work Management core + monday CRM | User choice |
+| D-002 | 2026-10-24 | Single organization (no multi-tenant SaaS, no billing) | User choice |
+| D-003 | 2026-10-24 | Stack: Python Lambdas (AWS Lambda Powertools), React + TypeScript SPA, AWS CDK in Python; serverless-first | User choice |
+| D-004 | 2026-10-24 | Code and docs live in `~/workspace/monday-clone` | User choice |
+| D-005 | 2026-10-24 | Priority cut accepted as in feature-inventory.md: P1 detailed fully, P2/P3 summarized; AI, Docs (J), marketplace, mobile apps OUT | User choice |
+| D-006 | 2026-10-24 | CRM email via Amazon SES (outbound from org domain + inbound reply-tracking address that posts to item timeline); no Gmail/Outlook OAuth. Priority stays P2 per D-005 | User choice |
+| D-007 | 2026-10-24 | Scale target: ≤500 users, ≤1M items total; add a search index for filtering/global search | User choice |
+| D-008 | 2026-10-24 | Real-time collaboration (WebSocket push + presence) is P1 | User choice |
+| D-009 | 2026-10-24 | Replicate functionality only — original code, UI and branding; no monday.com assets or source | Legal/ethical constraint |
+| D-010 | 2026-10-24 | Concurrency: scalar cells last-write-wins with a server-assigned monotonically increasing per-item `version` (no 409 on cell writes); multi-value cells (People, Dropdown, Connect, Files) accept add/remove deltas so concurrent adds both survive; structural edits (columns, groups, views, automations) use optimistic locking with 409 on stale `version` | PO review PO-1 |
+| D-011 | 2026-10-24 | CRM activities have a single source of truth: a timeline activity **is** an item on the Activities board; an item's timeline is a view over Activities items whose *Related item* contains it (plus system entries). Seeded automation 6 is replaced by this built-in behavior | PO-3; matches monday's behavior |
+| D-012 | 2026-10-24 | Mirror columns, formulas over mirrors, and dashboard widgets include only linked items the viewer can see; hidden contributors are excluded and the cell is marked "partial" | PO-4; consistent with H7 |
+| D-013 | 2026-10-24 | Automation actions "Assign person" (A9) and "Connect items where column matches" (A10) promoted to P1 (A10 is required by seeded automation 9; A9 is needed by round-robin-free CRM flows). "Duplicate item" restored to P1 per inventory | PO-11 |
+| D-014 | 2026-10-24 | Deliberate deviations from the observed monday CRM template: Forecast Value divides by 100; Deals get a *Closed Lost* group; Leads get a reflected *Contacts* column; *Qualified* is not a done label (matches monday) | PO review notes |
+| D-015 | 2026-10-24 | Stored ("materialized") formula and mirror values are computed over the full linked set and are served only to viewers who can see every contributing board; for any other viewer, display, filter, sort, export, widgets are computed per viewer over visible contributors (slower path) | PO NEW-1, extends D-012 |
+| D-016 | 2026-10-24 | The Activities board is a system-managed Main board. Its rows are visible to a user iff the user can see at least one of the activity's Related items; timeline actions are authorized against the source item's board | PO NEW-4, extends D-011 |
+| D-017 | 2026-10-24 | Dashboard widget periods and date bucketing, automations and materialized time-dependent formulas use the account timezone (one shared truth); only interactive table/kanban filters use the viewer's timezone | PO NEW-6 |
+| D-018 | 2026-10-24 | Real-time computed-value events carry the value only to subscribers who can see every contributing board; others receive an invalidation and re-fetch their own (per-viewer) value | PO final A |
+| D-019 | 2026-10-24 | Automations resolve visibility-sensitive values (mirrors, formulas over mirrors) as their **owner** sees them; notification text variables are additionally resolved per **recipient** (a recipient who cannot see all contributors gets their own visible value) | PO final B |
+| D-020 | 2026-10-24 | Row-level visibility (Activities board, D-016) is enforced on every read path: search, views, counts, summaries, widgets, export, API pagination and real-time. Mechanism chosen in architecture | PO final C |
+| D-021 | 2026-10-24 | Board filters/sort/group are always evaluated server-side (single implementation); this replaces D2.7's client-side evaluation for ≤ 2,000 items. The client applies only optimistic deltas to rows and aggregates | Council DX-18 |
+| D-022 | 2026-10-25 | **ACCEPTED by user:** AC-K7-2 tolerance — a correct sign-in from another IP succeeds within 35 s (Cognito's own per-user lockout cannot be disabled; the auth proxy keeps it ≤ 32 s) | Council SEC-4 |
+| D-023 | 2026-10-25 | **ACCEPTED by user:** NFR-P1/P2 board first page ≤ 800 ms API / ≤ 2.5 s paint up to 20k items; for 20k–100k items first page ≤ 3 s with group summaries delivered by a separate cached call | Council PERF-10 |
+| D-024 | 2026-10-25 | **ACCEPTED by user:** cost profile "lean" ≈ $245/mo prod at 100 active users (≈ $60 staging, ≈ $25 dev) replaces the $150 target | AR-26, OPS-13…15 |
+| D-025 | 2026-10-25 | M0a spikes deploy into the AWS account reachable by the connected AWS tools (account/region confirmed before deploying) | User choice |
