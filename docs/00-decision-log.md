@@ -43,3 +43,4 @@
 | D-039 | 2026-10-25 | **User:** dev security baseline = **CloudTrail only** (account's first trail: management events free). GuardDuty, Security Hub and Config are added with a prod stage (P-launch) | SEC-20, cost |
 | D-040 | 2026-10-25 | **User:** alarms are emailed to avishekdas.cool@gmail.com (SNS email subscription; AWS sends a confirmation email that must be accepted) | PE-7 |
 | D-041 | 2026-10-25 | **User:** WAF on the dev distribution deferred to M6 (public forms), where the challenge rules from S-2a are needed | SEC-7, cost |
+| D-042 | 2026-10-25 | DB role-secret rotation uses **alternating users** (two LOGIN users per role class, members of a NOLOGIN group role holding the grants): the Data API only reads `AWSCURRENT`, so a single-user rotation would break callers between setSecret and finishSecret. Implemented with the M1 security stories | M0A-3 |
