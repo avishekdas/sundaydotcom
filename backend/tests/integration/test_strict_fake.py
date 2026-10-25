@@ -77,3 +77,25 @@ def test_integers_travel_as_bigint_like_the_data_api(pg_uri: str) -> None:
     with _pytest.raises(_errors.UndefinedFunction):
         db.query("select pg_temp.f(:n) as v", {"n": 5})
     assert db.query("select pg_temp.f(:n::int) as v", {"n": 5}) == [{"v": 5}]
+
+
+def test_result_shapes_match_the_data_api(pg_uri: str) -> None:
+    """Observed on dev (Aurora PG 18.6, formatRecordsAs=JSON) 2026-10-25 — M0A-14 parity."""
+    import pytest as _pytest
+
+    from tasklane.platform.db import DataApiRuleViolation, StrictDataApiFake
+
+    db = StrictDataApiFake(pg_uri)
+    row = db.query(
+        """select 1::int as i4, 2::bigint as i8, 1.50::numeric as num, 1.5::float8 as f8, true as b,
+                  '2026-10-25 23:44:22.659344+00'::timestamptz as ts, '2026-01-02 03:04:05'::timestamp as tsnaive,
+                  '2026-10-25'::date as d, '{"a":[1]}'::jsonb as j, '{"a":1}'::json as js, array['x','y'] as arr,
+                  array[1,2]::bigint[] as iarr, '3ed3cf2f-3d0d-4229-b69a-7a113b338132'::uuid as u, null::text as n,
+                  '1.2.3.4'::inet as inet, 1::smallint as small""")[0]
+    assert row == {"i4": 1, "i8": 2, "num": "1.50", "f8": 1.5, "b": True, "ts": "2026-10-25 23:44:22.659344",
+                   "tsnaive": "2026-01-02 03:04:05", "d": "2026-10-25", "j": '{"a": [1]}', "js": '{"a":1}',
+                   "arr": ["x", "y"], "iarr": [1, 2], "u": "3ed3cf2f-3d0d-4229-b69a-7a113b338132", "n": None,
+                   "inet": "1.2.3.4/32", "small": 1}
+    for expr in ("'1 day'::interval", "pg_current_xact_id()", "'x'::citext"):
+        with _pytest.raises(DataApiRuleViolation, match="unsupported"):
+            db.query(f"select {expr} as v")
