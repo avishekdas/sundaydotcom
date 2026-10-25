@@ -1,0 +1,29 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
+jobs:
+  backend:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:18.6
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+    env:
+      TL_TEST_PG_URI: postgresql://postgres:postgres@localhost:5432/postgres
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { python-version: "3.13", enable-cache: true }
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy src
+      - run: uv run lint-imports
+      - run: uv run pytest --cov=tasklane --cov-report=term-missing

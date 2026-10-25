@@ -1,4 +1,4 @@
-# 03 — Data Model (Aurora PostgreSQL 16)
+# 03 — Data Model (Aurora PostgreSQL 18.6, D-026)
 
 ## 3.1 Principles
 - One schema `tl`; all IDs `bigint` from a single sequence (`tl.id_seq`) so item IDs are globally unique (B6.3); ids are **not** creation-ordered (sequence caching, PERF-19) — creation order is `(created_at, id)`.
@@ -41,8 +41,9 @@ erDiagram
 ```sql
 create table tl.account (id smallint primary key default 1 check (id = 1),
   name text not null, logo_file_id bigint, timezone text not null default 'UTC',
-  date_format text not null, week_start smallint not null, allowed_domains text[] not null default '{}',
+  date_format text not null, week_start smallint not null, allowed_domains jsonb not null default '[]',  -- jsonb: Data API has no array params
   require_mfa boolean not null default true, perm_epoch bigint not null default 0,  -- global permission epoch (07 §7.2)
+  db_generation bigint not null default 1,   -- bumped by the restore runbook (OPS-10)
   settings jsonb not null default '{}');
 
 create table tl.users (id bigint primary key, cognito_sub uuid unique, email citext unique not null,

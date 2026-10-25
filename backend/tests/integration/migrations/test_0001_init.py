@@ -1,4 +1,5 @@
 """0000_bootstrap + 0001_init: schema, states, db_generation, partitions, Postgres roles per function class (PE-8, SEC-11)."""
+
 from __future__ import annotations
 
 import uuid
@@ -8,6 +9,7 @@ from pathlib import Path
 import psycopg
 import pytest
 from psycopg import errors
+from psycopg.conninfo import make_conninfo
 
 from tasklane.platform.migrations import apply_migrations, discover
 
@@ -20,7 +22,7 @@ def db_uri(pg_uri: str) -> Iterator[str]:
     name = "mig_" + uuid.uuid4().hex[:8]
     with psycopg.connect(pg_uri, autocommit=True) as c:
         c.execute(f"create database {name}")
-    uri = pg_uri.rsplit("/", 1)[0] + "/" + name
+    uri = make_conninfo(pg_uri, dbname=name)
     apply_migrations(uri, MIGRATIONS)
     yield uri
 
@@ -32,9 +34,15 @@ def as_role(uri: str, role: str) -> psycopg.Connection:
 
 
 def seed(c: psycopg.Connection) -> None:
-    c.execute("insert into tl.workspaces (id, name, kind, position) values (1, 'W', 'open', 'a') on conflict do nothing")
-    c.execute("insert into tl.boards (id, workspace_id, name, kind, position) values (1, 1, 'B', 'main', 'a') on conflict do nothing")
-    c.execute("insert into tl.groups (id, board_id, title, color, position) values (1, 1, 'G', 'blue', 'a') on conflict do nothing")
+    c.execute(
+        "insert into tl.workspaces (id, name, kind, position) values (1, 'W', 'open', 'a') on conflict do nothing"
+    )
+    c.execute(
+        "insert into tl.boards (id, workspace_id, name, kind, position) values (1, 1, 'B', 'main', 'a') on conflict do nothing"
+    )
+    c.execute(
+        "insert into tl.groups (id, board_id, title, color, position) values (1, 1, 'G', 'blue', 'a') on conflict do nothing"
+    )
 
 
 def test_discover_orders_and_rejects_gaps(tmp_path: Path) -> None:
@@ -84,9 +92,13 @@ def test_board_changes_and_outbox_have_todays_partition(db_uri: str) -> None:
         c.execute("insert into tl.outbox (event_id, type, payload) values (gen_random_uuid(), 't', '{}')")
         xid = c.execute("select xid from tl.board_changes limit 1").fetchone()
         assert xid is not None and int(str(xid[0])) > 0
-        before = c.execute("select count(*) from pg_inherits where inhparent = 'tl.outbox'::regclass").fetchone()
+        before = c.execute(
+            "select count(*) from pg_inherits where inhparent = 'tl.outbox'::regclass"
+        ).fetchone()
         c.execute("select tl.ensure_daily_partitions('tl.outbox', current_date, 3)")
-        after = c.execute("select count(*) from pg_inherits where inhparent = 'tl.outbox'::regclass").fetchone()
+        after = c.execute(
+            "select count(*) from pg_inherits where inhparent = 'tl.outbox'::regclass"
+        ).fetchone()
     assert before == after  # idempotent; migration pre-creates today + 2 days
 
 
@@ -136,5 +148,7 @@ def test_audit_writer_only_inserts_audit(db_uri: str) -> None:
 
 def test_tables_are_owned_by_migrator(db_uri: str) -> None:
     with psycopg.connect(db_uri) as c:
-        owners = {r[0] for r in c.execute("select tableowner from pg_tables where schemaname = 'tl'").fetchall()}
+        owners = {
+            r[0] for r in c.execute("select tableowner from pg_tables where schemaname = 'tl'").fetchall()
+        }
     assert owners == {"tl_migrator"}
