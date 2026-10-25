@@ -8,7 +8,7 @@ flowchart TB
     R53[Route 53<br/>app · files · ws · reply]
     CF1[CloudFront app.domain<br/>S3 SPA · /api/* · /forms/*<br/>adds x-tl-origin secret header]
     CF2[CloudFront files.domain<br/>signed GET to S3 files]
-    WAF[WAF web ACL on CF1<br/>managed rules · rate rules<br/>challenge token label → x-tl-chal]
+    WAF[WAF web ACL on CF1<br/>managed rules · rate rules<br/>challenge token label → x-amzn-waf-tl-chal<br/>block viewer x-amzn-waf-* headers]
   end
   subgraph Region["AWS Region (default us-east-1)"]
     S3W[(S3 web bucket · OAC)]
