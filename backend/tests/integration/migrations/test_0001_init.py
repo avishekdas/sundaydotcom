@@ -210,3 +210,30 @@ def test_log_partitions_cover_a_week_ahead(db_uri: str) -> None:  # M0A-15
             "select count(*) from pg_inherits where inhparent = 'tl.board_changes'::regclass"
         ).fetchone()
     assert row is not None and row[0] >= 8
+
+
+# --- runner on the Db port (M0A-3, M0A-6) ------------------------------------------------------
+
+
+def test_runner_works_through_the_db_port(pg_uri: str) -> None:
+    from tasklane.platform.db import PsycopgDb
+
+    name = "port_" + uuid.uuid4().hex[:8]
+    with psycopg.connect(pg_uri, autocommit=True) as c:
+        c.execute(f"create database {name}")
+    db = PsycopgDb(make_conninfo(pg_uri, dbname=name))
+    assert apply_migrations(db, MIGRATIONS) == ["0000", "0001"]
+    assert apply_migrations(db, MIGRATIONS) == []
+
+
+def test_role_logins_are_enabled_with_passwords(db_uri: str) -> None:
+    from tasklane.platform.db import PsycopgDb
+    from tasklane.platform.migrations import ensure_role_logins
+
+    ensure_role_logins(PsycopgDb(db_uri), {"tl_reader": "s3cr3t-x", "tl_api_rw": "o'neil"})
+    with psycopg.connect(db_uri) as c:
+        rows = dict(c.execute(
+            "select rolname, rolcanlogin from pg_roles where rolname in ('tl_reader', 'tl_api_rw')").fetchall())
+    assert rows == {"tl_reader": True, "tl_api_rw": True}
+    with pytest.raises(ValueError, match="unknown role"):
+        ensure_role_logins(PsycopgDb(db_uri), {"postgres": "x"})
