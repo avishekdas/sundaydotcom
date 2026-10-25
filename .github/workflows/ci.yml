@@ -27,3 +27,14 @@ jobs:
       - run: uv run mypy src
       - run: uv run lint-imports
       - run: uv run pytest --cov=tasklane --cov-report=term-missing
+  infra:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults: { run: { working-directory: infra } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { python-version: "3.13", enable-cache: true }
+      - run: uv sync --locked
+      - run: uv run ruff check .
+      - run: uv run pytest -q

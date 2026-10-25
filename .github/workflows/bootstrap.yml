@@ -1,0 +1,15 @@
+name: cdk-bootstrap
+# One-off: creates the CDK bootstrap stack in the dev account. Uses the admin-scoped
+# tasklane-gh-bootstrap-dev role, which is deleted after a successful run.
+on: workflow_dispatch
+permissions: { id-token: write, contents: read }
+jobs:
+  bootstrap:
+    runs-on: ubuntu-24.04
+    environment: dev-bootstrap
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::920824005451:role/tasklane-gh-bootstrap-dev
+          aws-region: us-east-1
+      - run: npx -y aws-cdk@2.1146.1 bootstrap aws://920824005451/us-east-1 --tags project=tasklane --tags stage=dev
