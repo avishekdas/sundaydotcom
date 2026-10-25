@@ -31,8 +31,9 @@ class WorkersStack(cdk.Stack):
         **kw: object,
     ) -> None:
         super().__init__(scope, id, **kw)  # type: ignore[arg-type]
-        secret = data.role_secrets["tl_worker"]
-        common = {"stage": stage, "cluster": data.cluster, "db_secret": secret}
+        # table-scoped roles (M0A-4): acker + sweeper → tl_worker_outbox; scheduler-tick → tl_worker (functions only)
+        common = {"stage": stage, "cluster": data.cluster, "db_secret": data.role_secrets["tl_worker_outbox"]}
+        tick_common = {"stage": stage, "cluster": data.cluster, "db_secret": data.role_secrets["tl_worker"]}
         acker = worker_function(
             self, "Acker", name="outbox-acker", handler="tasklane.workers.outbox_acker.handler", **common
         )
@@ -62,7 +63,7 @@ class WorkersStack(cdk.Stack):
             handler="tasklane.workers.scheduler_tick.handler",
             reserved=1,
             timeout=cdk.Duration.seconds(55),
-            **common,
+            **tick_common,
         )
 
         role = iam.Role(self, "SchedulerRole", assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"))

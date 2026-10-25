@@ -119,3 +119,15 @@ def test_dead_man_alarm_tolerates_the_overnight_pause(app: cdk.App) -> None:  # 
             "TreatMissingData": "breaching",
         },
     )
+
+
+def test_outbox_workers_use_the_outbox_role_and_tick_the_tick_role(app: cdk.App) -> None:  # M0A-4
+    fns = template(app, "tasklane-dev-workers").find_resources("AWS::Lambda::Function")
+    by_name = {
+        f["Properties"].get("FunctionName"): str(f["Properties"]["Environment"]["Variables"]["DB_SECRET_ARN"])
+        for f in fns.values()
+        if "DB_SECRET_ARN" in f["Properties"].get("Environment", {}).get("Variables", {})
+    }
+    assert "tlworkeroutbox" in by_name["tasklane-dev-outbox-acker"].replace("_", "")
+    assert "tlworkeroutbox" in by_name["tasklane-dev-outbox-sweeper"].replace("_", "")
+    assert "tlworkeroutbox" not in by_name["tasklane-dev-scheduler-tick"].replace("_", "")

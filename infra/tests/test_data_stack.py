@@ -7,7 +7,15 @@ from aws_cdk.assertions import Match
 
 from tests.conftest import template
 
-ROLES = ["tl_migrator", "tl_api_rw", "tl_reader", "tl_worker", "tl_worker_forms", "tl_audit_writer"]
+ROLES = [
+    "tl_migrator",
+    "tl_api_rw",
+    "tl_reader",
+    "tl_worker",
+    "tl_worker_outbox",
+    "tl_worker_forms",
+    "tl_audit_writer",
+]
 
 
 def test_cluster_is_pg_18_6_serverless_v2_with_data_api(app: cdk.App) -> None:

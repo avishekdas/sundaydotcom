@@ -10,7 +10,15 @@ from constructs import Construct
 
 from tasklane_infra.config import Stage
 
-ROLES = ("tl_migrator", "tl_api_rw", "tl_reader", "tl_worker", "tl_worker_forms", "tl_audit_writer")
+ROLES = (
+    "tl_migrator",
+    "tl_api_rw",
+    "tl_reader",
+    "tl_worker",
+    "tl_worker_outbox",
+    "tl_worker_forms",
+    "tl_audit_writer",
+)
 
 
 class DataStack(cdk.Stack):

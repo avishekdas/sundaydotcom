@@ -23,7 +23,15 @@ _NAME = re.compile(r"^(\d{4})_[a-z0-9_]+\.sql$")
 _ADMIN = "-- run-as: admin"
 LOCK_KEY = 7_115_220_001  # pg_advisory_xact_lock key for "tasklane migrations"
 LOGIN_ROLES = frozenset(
-    {"tl_migrator", "tl_api_rw", "tl_reader", "tl_worker", "tl_worker_forms", "tl_audit_writer"}
+    {
+        "tl_migrator",
+        "tl_api_rw",
+        "tl_reader",
+        "tl_worker",
+        "tl_worker_outbox",
+        "tl_worker_forms",
+        "tl_audit_writer",
+    }
 )
 
 
