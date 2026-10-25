@@ -1,0 +1,114 @@
+/**
+ * Board sync engine (arch 09 §9.3, AR-18, DX-3): subscribe-then-load, push via WebSocket, gap sync on
+ * reconnect via POST /boards/{id}/changes with an xid cursor taken *before* the snapshot, so no change is lost
+ * between the snapshot and the first pushed event.
+ */
+import { BoardStore } from "./store";
+import type { ItemEvent, ServerItem } from "./types";
+
+export interface Schema {
+  board: { id: string; name: string };
+  groups: { id: string; title: string; color: string }[];
+  columns: { id: string; title: string; type: string; settings: Record<string, unknown> }[];
+}
+
+export interface BoardApi {
+  schema(boardId: string): Promise<Schema>;
+  query(boardId: string): Promise<{ ids: string[]; groups: { id: string; count: number }[] }>;
+  fetch(boardId: string, ids: string[]): Promise<ServerItem[]>;
+  changes(boardId: string, since: string | null): Promise<{ next_since_xmin: string; db_generation: number;
+                                                            changes: { item_id: string }[] }>;
+}
+
+export interface Socket {
+  send(msg: unknown): void;
+  close(): void;
+}
+
+export interface SocketFactory {
+  open(handlers: { onMessage: (m: Record<string, unknown>) => void; onOpen: () => void; onClose: () => void }):
+    Promise<Socket>;
+}
+
+export class SyncEngine {
+  readonly store: BoardStore;
+  schema: Schema | null = null;
+  order: string[] = [];
+  private cursor: string | null = null;
+  private generation: number | null = null;
+  private socket: Socket | null = null;
+  private stopped = false;
+  private reconnectDelay = 500;
+  onChange: () => void = () => {};
+
+  constructor(private readonly api: BoardApi, private readonly sockets: SocketFactory, readonly boardId: string,
+              private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))) {
+    this.store = new BoardStore((ids) => void this.refetch(ids));
+    this.store.subscribe(() => this.onChange());
+  }
+
+  async start(): Promise<void> {
+    await this.connect();             // 1. subscribe first …
+    const c = await this.api.changes(this.boardId, null); // 2. … take the cursor …
+    this.cursor = c.next_since_xmin;
+    this.generation = c.db_generation;
+    await this.load();                // 3. … then load the snapshot
+  }
+
+  private async load(): Promise<void> {
+    const [schema, q] = await Promise.all([this.api.schema(this.boardId), this.api.query(this.boardId)]);
+    this.schema = schema;
+    this.order = q.ids;
+    await this.refetch(q.ids);
+    this.onChange();
+  }
+
+  private async refetch(ids: string[]): Promise<void> {
+    for (let i = 0; i < ids.length; i += 200) {
+      this.store.applyItems(await this.api.fetch(this.boardId, ids.slice(i, i + 200)));
+    }
+  }
+
+  private async connect(): Promise<void> {
+    this.socket = await this.sockets.open({   // resolves once the socket is open
+      onOpen: () => {},
+      onMessage: (m) => {
+        if (m.type === "item.values_changed" && m.board_id === this.boardId) this.store.applyEvent(m as unknown as ItemEvent);
+      },
+      onClose: () => void this.reconnect(),
+    });
+    this.socket.send({ action: "subscribe", board_id: this.boardId });
+  }
+
+  private async reconnect(): Promise<void> {
+    if (this.stopped) return;
+    await this.sleep(this.reconnectDelay);
+    this.reconnectDelay = Math.min(this.reconnectDelay * 2, 15_000);
+    try {
+      await this.connect();
+      this.reconnectDelay = 500;
+      await this.gapSync();
+    } catch {
+      void this.reconnect();
+    }
+  }
+
+  /** Re-fetch everything that changed since the cursor; full reload on a new db_generation (OPS-10). */
+  async gapSync(): Promise<void> {
+    const c = await this.api.changes(this.boardId, this.cursor);
+    if (this.generation !== null && c.db_generation !== this.generation) {
+      this.generation = c.db_generation;
+      this.cursor = c.next_since_xmin;
+      await this.load();
+      return;
+    }
+    this.cursor = c.next_since_xmin;
+    const ids = [...new Set(c.changes.map((x) => x.item_id))];
+    if (ids.length) await this.refetch(ids);
+  }
+
+  stop(): void {
+    this.stopped = true;
+    this.socket?.close();
+  }
+}

@@ -13,3 +13,6 @@ cdk.out/
 spikes/**/*.zip
 .DS_Store
 infra/.build/
+web/node_modules/
+web/dist/
+*.tsbuildinfo

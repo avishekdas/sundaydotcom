@@ -23,6 +23,9 @@ jobs:
           role-to-assume: arn:aws:iam::920824005451:role/tasklane-gh-deploy-dev
           aws-region: us-east-1
       - run: uv sync --locked
+      - name: Build web
+        working-directory: web
+        run: npm ci --no-audit --no-fund && npm run build
       - name: Deploy data + migrate stacks
         run: ../scripts/ci-run.sh npx -y aws-cdk@2.1146.1 deploy tasklane-dev-network tasklane-dev-data tasklane-dev-migrate --require-approval never --ci --progress events
       - name: Run migrations (migrate λ)

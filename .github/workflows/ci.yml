@@ -38,3 +38,15 @@ jobs:
       - run: uv sync --locked
       - run: uv run ruff check .
       - run: uv run pytest -q
+  web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci --no-audit --no-fund
+      - run: npx tsc -b
+      - run: npx vitest run
+      - run: npx vite build
