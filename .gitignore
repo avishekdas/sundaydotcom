@@ -10,3 +10,4 @@ cdk.out/
 .pgdata/
 *.egg-info/
 .coverage
+spikes/**/*.zip

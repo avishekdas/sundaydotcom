@@ -5,7 +5,7 @@
 | D-001 | 2026-10-24 | Scope = monday Work Management core + monday CRM | User choice |
 | D-002 | 2026-10-24 | Single organization (no multi-tenant SaaS, no billing) | User choice |
 | D-003 | 2026-10-24 | Stack: Python Lambdas (AWS Lambda Powertools), React + TypeScript SPA, AWS CDK in Python; serverless-first | User choice |
-| D-004 | 2026-10-24 | Code and docs live in `~/workspace/monday-clone` | User choice |
+| D-004 | 2026-10-24 | Code and docs live in `~/workspace/monday-clone` (superseded by D-027: `~/tasklane`) | User choice |
 | D-005 | 2026-10-24 | Priority cut accepted as in feature-inventory.md: P1 detailed fully, P2/P3 summarized; AI, Docs (J), marketplace, mobile apps OUT | User choice |
 | D-006 | 2026-10-24 | CRM email via Amazon SES (outbound from org domain + inbound reply-tracking address that posts to item timeline); no Gmail/Outlook OAuth. Priority stays P2 per D-005 | User choice |
 | D-007 | 2026-10-24 | Scale target: ≤500 users, ≤1M items total; add a search index for filtering/global search | User choice |
@@ -27,3 +27,6 @@
 | D-023 | 2026-10-25 | **ACCEPTED by user:** NFR-P1/P2 board first page ≤ 800 ms API / ≤ 2.5 s paint up to 20k items; for 20k–100k items first page ≤ 3 s with group summaries delivered by a separate cached call | Council PERF-10 |
 | D-024 | 2026-10-25 | **ACCEPTED by user:** cost profile "lean" ≈ $245/mo prod at 100 active users (≈ $60 staging, ≈ $25 dev) replaces the $150 target | AR-26, OPS-13…15 |
 | D-025 | 2026-10-25 | M0a spikes deploy into the AWS account reachable by the connected AWS tools (account/region confirmed before deploying) | User choice |
+| D-026 | 2026-10-25 | Aurora PostgreSQL **18.6** (instead of 16): available for Serverless v2 + Data API, and identical to the embedded PostgreSQL 18.6 used for local tests. PG18-only syntax (e.g. `RETURNING old.*`) is banned by the Db port so the pre-image CTE pattern stays portable | M0a setup |
+| D-027 | 2026-10-25 | Project lives at `/Users/abhishridas/tasklane` (moved from `~/workspace/monday-clone`) so delete permission — needed by git — is scoped to the project only | User choice |
+| D-028 | 2026-10-25 | Local test database: `embedded-postgres` 18.6 wheel (Docker is not available in the Cowork VM); CI uses a PostgreSQL 18 container. TOAST lz4 is set via the Aurora cluster parameter `default_toast_compression`, not in DDL (the embedded build lacks lz4) | M0a setup |
