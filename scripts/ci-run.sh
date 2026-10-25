@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# Run a command; on failure surface the last 60 log lines as a GitHub annotation (readable via the API).
+set -o pipefail
+log=$(mktemp)
+"$@" 2>&1 | tee "$log"
+rc=${PIPESTATUS[0]}
+if [ "$rc" -ne 0 ]; then
+  msg=$(grep -vE "^\s*$" "$log" | grep -iE "error|fail|exception|denied|invalid" | tail -25 | cut -c1-300 | sed ':a;N;$!ba;s/%/%25/g;s/\n/%0A/g')
+  echo "::error title=$1 failed::${msg}"
+fi
+exit "$rc"
