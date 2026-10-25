@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "tasklane/events/item.values_changed/1",
+  "title": "item.values_changed (schema_version 1)",
+  "description": "EventBridge Detail for a cell write. Consumers: outbox-acker, fanout. Additive changes only within a version (PE-6).",
+  "type": "object",
+  "required": ["event_id", "type", "schema_version", "board_id", "item_id", "payload"],
+  "properties": {
+    "event_id": {"type": "string", "format": "uuid"},
+    "type": {"const": "item.values_changed"},
+    "schema_version": {"const": 1},
+    "board_id": {"type": "integer"},
+    "item_id": {"type": "integer"},
+    "payload": {
+      "type": "object",
+      "required": ["changes", "version", "seq"],
+      "properties": {
+        "changes": {
+          "type": "array", "minItems": 1,
+          "items": {"type": "object", "required": ["col", "old", "new"],
+                    "properties": {"col": {"type": "string", "pattern": "^[a-z][a-z0-9_]{0,62}$"}, "old": {}, "new": {}}}
+        },
+        "version": {"type": "integer", "minimum": 2},
+        "seq": {"type": "integer"},
+        "mutation_id": {"type": ["string", "null"]}
+      }
+    }
+  }
+}

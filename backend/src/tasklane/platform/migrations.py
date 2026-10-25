@@ -46,6 +46,11 @@ class Migration:
         return hashlib.sha256(self.sql.encode()).hexdigest()
 
     @property
+    def no_transaction(self) -> bool:
+        """``-- run-mode: no-transaction`` (CREATE INDEX CONCURRENTLY): statements run one by one, autocommit."""
+        return any(line.strip() == "-- run-mode: no-transaction" for line in self.sql.splitlines()[:3])
+
+    @property
     def as_admin(self) -> bool:
         return self.sql.lstrip().startswith(_ADMIN)
 
@@ -84,6 +89,21 @@ def apply_migrations(target: Db | str, directory: Path, *, lock_timeout: str = "
             raise RuntimeError(f"checksum mismatch for applied migration {mig.path.name}")
     done: list[str] = []
     for mig in migrations:
+        if mig.no_transaction:
+            if mig.version not in _applied(db):
+                # Each statement autocommits; table ownership comes from the admin's tl_migrator membership.
+                # Statements must be idempotent (IF NOT EXISTS); an invalid index from a failed run must be
+                # dropped by hand before re-running (runbook: ops/runbooks/migrations.md).
+                for stmt in split_statements(mig.sql):
+                    db.execute(stmt)
+                with db.transaction() as tx:
+                    tx.execute(
+                        "insert into tl.schema_migrations (version, name, checksum) values (:v, :n, :c) "
+                        "on conflict (version) do nothing",
+                        {"v": mig.version, "n": mig.path.stem, "c": mig.checksum},
+                    )
+                done.append(mig.version)
+            continue
         with db.transaction() as tx:
             tx.execute("select pg_advisory_xact_lock(:k)", {"k": LOCK_KEY})
             applied = _applied(tx)

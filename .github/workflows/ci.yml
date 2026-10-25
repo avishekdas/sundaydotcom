@@ -26,6 +26,12 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src
       - run: uv run lint-imports
+      - name: squawk (migrations after the reviewed baseline 0000-0004)
+        run: |
+          files=$(ls migrations/*.sql | awk -F/ '$2 >= "0005"')
+          if [ -n "$files" ]; then
+            npx -y squawk-cli@2.30.0 --exclude prefer-robust-stmts,prefer-identity,prefer-bigint-over-smallint,require-timeout-settings $files
+          fi
       - run: uv run pytest --cov=tasklane --cov-report=term-missing --cov-fail-under=90
   infra:
     runs-on: ubuntu-24.04
