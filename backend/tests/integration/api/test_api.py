@@ -120,3 +120,18 @@ def test_realtime_ticket(deps: Deps) -> None:
 def test_unknown_route_is_404_with_error_shape(deps: Deps) -> None:
     status, body = call(deps, "GET", "/api/v1/nope")
     assert status == 404 and body["error"]["code"] == "not_found"
+
+
+def test_fault_injection_only_outside_prod(deps: Deps, monkeypatch: pytest.MonkeyPatch) -> None:  # canary rehearsal
+    from tasklane.api import app as api_app
+
+    monkeypatch.setenv("TL_FAULT_INJECTION", "1")
+    monkeypatch.setenv("STAGE", "dev")
+    with pytest.raises(RuntimeError, match="fault injection"):
+        api_app.handler({"rawPath": "/api/v1/me"}, None)
+    monkeypatch.setenv("STAGE", "prod")
+    monkeypatch.setattr(api_app, "_env_deps", lambda: deps)
+    assert api_app.handler({"version": "2.0", "routeKey": "GET /api/v1/me", "rawPath": "/api/v1/me", "rawQueryString": "",
+                            "headers": {}, "requestContext": {"http": {"method": "GET", "path": "/api/v1/me",
+                                                                       "sourceIp": "1.1.1.1"}, "requestId": "r",
+                                                              "stage": "$default"}, "isBase64Encoded": False}, None)["statusCode"] == 401
