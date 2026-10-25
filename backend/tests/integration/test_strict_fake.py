@@ -63,3 +63,17 @@ def test_transaction_rolls_back_on_error(db: StrictDataApiFake) -> None:
 def test_rules_apply_inside_transactions(db: StrictDataApiFake) -> None:
     with pytest.raises(DataApiRuleViolation), db.transaction() as tx:
         tx.query("select 1 where 1 = any(:p)", {"p": Json([1])})
+
+
+def test_integers_travel_as_bigint_like_the_data_api(pg_uri: str) -> None:
+    """Data API longValue is int8: a function taking int must be called with an explicit cast (found on dev)."""
+    import pytest as _pytest
+    from psycopg import errors as _errors
+
+    from tasklane.platform.db import StrictDataApiFake as _Fake
+
+    db = _Fake(pg_uri)
+    db.execute("create or replace function pg_temp.f(n int) returns int language sql as $$ select n $$")
+    with _pytest.raises(_errors.UndefinedFunction):
+        db.query("select pg_temp.f(:n) as v", {"n": 5})
+    assert db.query("select pg_temp.f(:n::int) as v", {"n": 5}) == [{"v": 5}]
