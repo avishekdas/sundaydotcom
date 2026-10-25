@@ -29,7 +29,7 @@ def tick(db: Db) -> dict[str, Any]:
 
 
 def handler(event: dict[str, Any], context: Any, *, rds_client: Any = None) -> dict[str, Any]:
-    from tasklane.workers._env import db_from_env
+    from tasklane.platform.aws_env import db_from_env
 
     out = tick(db_from_env(rds_client))
     print(json.dumps({"metric": "scheduler.tick", **out}))  # heartbeat for the dead-man alarm

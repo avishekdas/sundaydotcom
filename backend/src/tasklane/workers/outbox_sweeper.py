@@ -7,9 +7,9 @@ import json
 import os
 from typing import Any
 
+from tasklane.platform.aws_env import boto, db_from_env
 from tasklane.platform.clock import SystemClock
 from tasklane.platform.outbox import EventBridgePublisher, sweep
-from tasklane.workers._env import boto, db_from_env
 
 
 def handler(

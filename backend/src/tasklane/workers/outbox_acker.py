@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 from typing import Any
 
+from tasklane.platform.aws_env import db_from_env
 from tasklane.platform.clock import SystemClock
 from tasklane.platform.outbox import ack
-from tasklane.workers._env import db_from_env
 
 
 def handler(event: dict[str, Any], context: Any, *, rds_client: Any = None) -> dict[str, Any]:

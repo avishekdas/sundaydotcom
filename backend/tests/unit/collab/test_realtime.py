@@ -1,4 +1,5 @@
 """Realtime registry (arch 05 §5.2; AR-10, D-018): single-use tickets, connections, board subscriptions, fan-out."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -16,10 +17,10 @@ def test_ticket_is_single_use_and_expires_after_30s() -> None:
     t = reg.issue_ticket(user_id=42)
     assert len(t) >= 32
     assert reg.redeem_ticket(t) == 42
-    assert reg.redeem_ticket(t) is None              # single use
+    assert reg.redeem_ticket(t) is None  # single use
     t2 = reg.issue_ticket(user_id=42)
     clock.advance(seconds=31)
-    assert reg.redeem_ticket(t2) is None             # expired
+    assert reg.redeem_ticket(t2) is None  # expired
 
 
 def test_subscriptions_and_disconnect_cleanup() -> None:
@@ -55,12 +56,29 @@ def test_fan_out_sends_board_events_to_subscribers_and_drops_gone_connections() 
     reg.connect("c4", 42)
     reg.subscribe("c4", 20)
     gw = FakeGateway(gone={"c2"})
-    detail = {"event_id": "e1", "type": "item.values_changed", "board_id": 10, "item_id": 1003,
-              "payload": {"changes": [{"col": "status", "old": None, "new": {"l": 1}}], "version": 2, "seq": 5,
-                          "mutation_id": "m1"}}
+    detail = {
+        "event_id": "e1",
+        "type": "item.values_changed",
+        "board_id": 10,
+        "item_id": 1003,
+        "payload": {
+            "changes": [{"col": "status", "old": None, "new": {"l": 1}}],
+            "version": 2,
+            "seq": 5,
+            "mutation_id": "m1",
+        },
+    }
     n = fan_out(reg, gw, detail)
     assert n == 2 and sorted(c for c, _ in gw.sent) == ["c1", "c3"]
     msg = gw.sent[0][1]
-    assert msg == {"type": "item.values_changed", "event_id": "e1", "board_id": "10", "item_id": "1003",
-                   "version": 2, "seq": 5, "mutation_id": "m1", "values": {"status": {"l": 1}}}
+    assert msg == {
+        "type": "item.values_changed",
+        "event_id": "e1",
+        "board_id": "10",
+        "item_id": "1003",
+        "version": 2,
+        "seq": 5,
+        "mutation_id": "m1",
+        "values": {"status": {"l": 1}},
+    }
     assert reg.subscribers(10) == ["c1", "c3"] or sorted(reg.subscribers(10)) == ["c1", "c3"]
