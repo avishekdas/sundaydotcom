@@ -70,9 +70,8 @@ class Mutation:
     def add(self, cte: Cte) -> Mutation:
         """Add a write fragment; it must depend on ``u``."""
         if not _DEPENDS_ON_U.search(cte.sql):
-            raise MutationRuleError(
-                f"fragment {cte.name!r} must depend on the main write CTE u (select … from u)"
-            )
+            msg = f"fragment {cte.name!r} must depend on the main write CTE u"
+            raise MutationRuleError(msg)
         self._push(cte)
         return self
 
