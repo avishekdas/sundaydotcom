@@ -2,6 +2,7 @@
 
 AWS adapters run against moto here; the fakes are what local dev and Tier A use.
 """
+
 from __future__ import annotations
 
 import base64
@@ -42,7 +43,11 @@ def test_presigned_post_enforces_size_and_type(blobs: BlobStore) -> None:
     assert p["url"] and p["fields"]["key"] == "up/x"
     policy = json.loads(base64.b64decode(p["fields"]["policy"]))
     assert ["content-length-range", 1, 5_000_000] in policy["conditions"]
-    assert {"Content-Type": "application/pdf"} in policy["conditions"] or ["eq", "$Content-Type", "application/pdf"] in policy["conditions"]
+    assert {"Content-Type": "application/pdf"} in policy["conditions"] or [
+        "eq",
+        "$Content-Type",
+        "application/pdf",
+    ] in policy["conditions"]
 
 
 def test_presigned_get_is_attachment(blobs: BlobStore) -> None:
