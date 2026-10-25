@@ -87,6 +87,7 @@ def alarm(
     summary: str,
     topic: sns.ITopic,
     evaluation_periods: int = 1,
+    datapoints: int | None = None,
     missing: cw.TreatMissingData = cw.TreatMissingData.NOT_BREACHING,
 ) -> cw.Alarm:
     a = cw.Alarm(
@@ -96,6 +97,7 @@ def alarm(
         threshold=threshold,
         comparison_operator=comparison,
         evaluation_periods=evaluation_periods,
+        datapoints_to_alarm=datapoints,
         treat_missing_data=missing,
         alarm_description=f"{summary} — runbook: {RUNBOOKS}{runbook}.md",
     )

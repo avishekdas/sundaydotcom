@@ -4,7 +4,7 @@ Checked against account 920824005451 (us-east-1) on 2026-10-25. Items marked **u
 
 | # | Item | Needed by | Current state (observed) | Action | Owner | Status |
 |---|---|---|---|---|---|---|
-| 1 | Domain + hosted zone | M0b (Edge stack) | Route 53 zone `avishekdas.dev` exists; no registered domains in this account | Pick sub-domains, e.g. `app.tasklane.avishekdas.dev` (prod), `staging.…`, `dev.…`; delegate a `tasklane` sub-zone per account | decided D-033 | ready |
+| 1 | Domain + hosted zone | M0b (Edge stack) | Route 53 zone `avishekdas.dev` exists; no registered domains in this account | Pick sub-domains, e.g. `app.tasklane.avishekdas.dev` (prod), `staging.…`, `dev.…`; delegate a `tasklane` sub-zone per account | CloudFront default address for dev (D-038) | done |
 | 2 | ACM certificates (us-east-1 for CloudFront) | M0b | none | DNS-validated certs per stage; created by the Edge stack | CDK | blocked on 1 |
 | 3 | SES production access | M7 (CRM email, P2 send) — request in week 1 because review takes days | sandbox: 200/day, 1 msg/s | Verify sending domain (DKIM, MAIL FROM), then submit production-access request with use-case text | **user** submits (AWS asks for account-owner details) | open |
 | 4 | AWS accounts dev / staging / prod | M0b story 8 | single account, **no AWS Organization** | Create an Organization from this account (management), add 3 member accounts; enable IAM Identity Center; stop using the root user for daily work | deferred (D-031: dev only) | deferred |

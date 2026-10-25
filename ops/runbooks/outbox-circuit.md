@@ -4,3 +4,4 @@
   1. Check the `tasklane-<stage>-outbox-ack` rule target and the queue's DLQ.
   2. Check acker errors. Fix, then watch `Circuit` return to 0.
 - Consumers are idempotent (event_id), so duplicate deliveries are safe; floods are what the circuit prevents.
+- **Dev (D-037):** the sweeper runs hourly 08:00–19:00 New York time, so an event whose first publish failed may be republished up to an hour later (overnight: at 08:00). Normal pushes do not depend on the sweeper.

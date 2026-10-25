@@ -67,13 +67,14 @@ class WorkersStack(cdk.Stack):
 
         role = iam.Role(self, "SchedulerRole", assumed_by=iam.ServicePrincipal("scheduler.amazonaws.com"))
         messaging.schedule_dlq.grant_send_messages(role)
-        for fid, fn in (("SweeperEveryMinute", sweeper), ("TickEveryMinute", tick)):
+        for fid, fn in (("SweeperSchedule", sweeper), ("TickSchedule", tick)):
             fn.grant_invoke(role)
             scheduler.CfnSchedule(
                 self,
                 fid,
                 name=f"tasklane-{stage.name}-{fid[0].lower()}{fid[1:]}",
-                schedule_expression="rate(1 minute)",
+                schedule_expression=stage.worker_schedule,
+                schedule_expression_timezone=stage.worker_schedule_tz,
                 flexible_time_window=scheduler.CfnSchedule.FlexibleTimeWindowProperty(mode="OFF"),
                 target=scheduler.CfnSchedule.TargetProperty(
                     arn=fn.function_arn,
@@ -106,8 +107,13 @@ class WorkersStack(cdk.Stack):
         alarm(
             self,
             "TickDeadMan",
-            metric=tick.metric_invocations(period=cdk.Duration.minutes(5)),
-            threshold=3,
+            metric=tick.metric_invocations(
+                period=cdk.Duration.hours(1) if stage.dead_man_hours else cdk.Duration.minutes(5),
+                statistic="Sum",
+            ),
+            threshold=1 if stage.dead_man_hours else 3,
+            evaluation_periods=stage.dead_man_hours or 1,
+            datapoints=stage.dead_man_hours or None,
             comparison=cw.ComparisonOperator.LESS_THAN_THRESHOLD,
             runbook="scheduler-tick",
             summary="scheduler-tick is not running (dead-man switch)",

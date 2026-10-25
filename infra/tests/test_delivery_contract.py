@@ -96,3 +96,26 @@ def test_dead_man_alarm_on_scheduler_tick(app: cdk.App) -> None:
             "TreatMissingData": "breaching",
         },
     )
+
+
+def test_dev_workers_run_hourly_during_daytime_only(app: cdk.App) -> None:  # D-037
+    for s in all_resources(app, "AWS::Scheduler::Schedule").values():
+        p = s["Properties"]
+        assert p["ScheduleExpression"] == "cron(0 8-19 * * ? *)"
+        assert p["ScheduleExpressionTimezone"] == "America/New_York"
+
+
+def test_dead_man_alarm_tolerates_the_overnight_pause(app: cdk.App) -> None:  # D-037: 12 quiet hours a night
+    t = template(app, "tasklane-dev-workers")
+    t.has_resource_properties(
+        "AWS::CloudWatch::Alarm",
+        {
+            "MetricName": "Invocations",
+            "Period": 3600,
+            "EvaluationPeriods": 14,
+            "DatapointsToAlarm": 14,
+            "Threshold": 1,
+            "ComparisonOperator": "LessThanThreshold",
+            "TreatMissingData": "breaching",
+        },
+    )
