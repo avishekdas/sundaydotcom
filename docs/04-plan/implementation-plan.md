@@ -67,6 +67,7 @@ Scaffold only: monorepo, CI skeleton, ports (`Db`, `Bus`, `Clock`) with fakes, `
 | **S-4** recompute & per-viewer (DL-4) | depth-2 mirror + formula over 20k linked items; bulk 1,000 edits | per-viewer filter+sort ≤ 2 s p95; bulk recompute ≤ 2 min; no drift | widen materialization; reduce depth-2 to on-read |
 Also in M0a: **external lead-time checklist** (DL-8) — domain & ACM certs, SES production access request (week 1), prod AWS account + OIDC, Service Quotas (Lambda concurrency ≥ 1,000), WAF Bot Control subscription. **User decisions** D-023 (after S-1) and D-024 (before M0b) recorded; D-022 after S-2b (DL-12, PE-18).
 **Exit:** spike reports in `docs/03-architecture/spikes/`, ADR appendices updated, decisions recorded.
+**Status (2026-10-25): M0a done** — S-1, S-2a (D-029), S-3, S-4 PASS; `0000_bootstrap`/`0001_init` with role tests; CI skeleton; lead-time checklist (`lead-time-checklist.md`) has open user items; spike resources deleted.
 
 ### M0b — Walking skeleton & platform (3–4 weeks)
 Stories:

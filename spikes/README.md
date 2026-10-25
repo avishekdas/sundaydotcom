@@ -7,7 +7,7 @@
 | S-3 cold start & sizing | **PASS** (no SnapStart/PC needed now) | `s3/REPORT.md` |
 | S-4 recompute & per-viewer | **PASS** | `s4/REPORT.md` |
 
-## Spike AWS resources (account avishekd 920824005451, us-east-1) — all tagged `purpose=tasklane-spike-m0a`, delete after M0a
-- Aurora Serverless v2 cluster `tasklane-spike` (PG 18.6, Data API, 0.5–4 ACU) + instance `tasklane-spike-writer`
-- Lambda `tasklane-spike-s1` (CloudFormation stack `tasklane-spike-s1`; inline loader that fetches `s1/bench.py` from S3)
-- IAM role `tasklane-spike-s1`, S3 bucket `tasklane-spike-920824005451-use1`
+## Spike AWS resources (account 920824005451, us-east-1, tag `purpose=tasklane-spike-m0a`) — **deleted 2026-10-25**
+- Aurora cluster `tasklane-spike` + instance `tasklane-spike-writer` (skip final snapshot; managed secret removed with the cluster)
+- Stacks `tasklane-spike-s1` (loader λ) and `tasklane-spike-s2a` (CloudFront, WAF, Lambda, OAC, CF Function)
+- IAM roles `tasklane-spike-s1`, `tasklane-spike-s2a`; S3 bucket `tasklane-spike-920824005451-use1`
