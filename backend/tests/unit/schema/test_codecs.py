@@ -1,4 +1,5 @@
 """Column codecs for the skeleton types (arch 03 §3.4; C40.6 contract rows for text, numbers, status)."""
+
 from __future__ import annotations
 
 import pytest

@@ -19,7 +19,6 @@ from tasklane.platform.db import Db, Json, Param, param_names
 
 _NAME = re.compile(r"^[a-z][a-z0-9_]*$")
 _SLUG = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
-_DEPENDS_ON_U = re.compile(r"\bfrom\s+u\b|\bu\s*\.|\bfrom\s+[^;]*\bu\s*,|,\s*u\b", re.IGNORECASE)
 
 
 class MutationRuleError(ValueError):
@@ -38,6 +37,9 @@ class MutationResult:
     ok: bool
     version: int | None
     seq: int | None
+    row: dict[str, Any] = field(
+        default_factory=dict
+    )  # the full final-select row (extra columns per mutation)
 
 
 class Mutation:
@@ -47,6 +49,7 @@ class Mutation:
         if main.name != "u":
             raise MutationRuleError("the main write CTE must be named u")
         self._ctes: list[Cte] = []
+        self._dependents: set[str] = {"u"}  # u and every CTE that reads from it (transitively)
         self._params: dict[str, Param] = {}
         self._final = final
         self._merge(params or {})
@@ -67,12 +70,21 @@ class Mutation:
         self._merge(cte.params)
         self._ctes.append(cte)
 
+    def _depends_on_u(self, sql: str) -> bool:
+        names = "|".join(sorted(self._dependents))
+        return bool(
+            re.search(
+                rf"\b(?:from|join)\s+(?:[^;()]*?,\s*)?(?:{names})\b|\b(?:{names})\s*\.", sql, re.IGNORECASE
+            )
+        )
+
     def add(self, cte: Cte) -> Mutation:
-        """Add a write fragment; it must depend on ``u``."""
-        if not _DEPENDS_ON_U.search(cte.sql):
+        """Add a fragment; it must depend on ``u`` (directly or through a CTE that does)."""
+        if not self._depends_on_u(cte.sql):
             msg = f"fragment {cte.name!r} must depend on the main write CTE u"
             raise MutationRuleError(msg)
         self._push(cte)
+        self._dependents.add(cte.name)
         return self
 
     def build(self) -> tuple[str, dict[str, Param]]:
@@ -92,6 +104,7 @@ def run(db: Db, mutation: Mutation) -> MutationResult:
         ok=version is not None,
         version=int(version) if version is not None else None,
         seq=int(seq) if seq is not None else None,
+        row=dict(row),
     )
 
 

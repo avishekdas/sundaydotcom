@@ -68,7 +68,12 @@ class StatusCodec:
     def normalize(self, raw: Any, settings: Settings) -> Any:
         if raw is None:
             return None
-        if not isinstance(raw, dict) or set(raw) != {"l"} or isinstance(raw["l"], bool) or not isinstance(raw["l"], int):
+        if (
+            not isinstance(raw, dict)
+            or set(raw) != {"l"}
+            or isinstance(raw["l"], bool)
+            or not isinstance(raw["l"], int)
+        ):
             raise CodecError('status must be {"l": <label id>}')
         if raw["l"] not in {lab["id"] for lab in settings.get("labels", [])}:
             raise CodecError("unknown status label")
