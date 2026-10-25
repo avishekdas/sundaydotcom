@@ -15,9 +15,19 @@ from tasklane.platform.db import DataApiRuleViolation, Json
 
 # Parameter names each rds-data operation accepts (botocore service model) — the fake rejects others.
 ALLOWED = {
-    "execute_statement": {"resourceArn", "secretArn", "database", "sql", "parameters", "transactionId",
-                          "formatRecordsAs", "includeResultMetadata", "continueAfterTimeout", "schema",
-                          "resultSetOptions"},
+    "execute_statement": {
+        "resourceArn",
+        "secretArn",
+        "database",
+        "sql",
+        "parameters",
+        "transactionId",
+        "formatRecordsAs",
+        "includeResultMetadata",
+        "continueAfterTimeout",
+        "schema",
+        "resultSetOptions",
+    },
     "begin_transaction": {"resourceArn", "secretArn", "database", "schema"},
     "commit_transaction": {"resourceArn", "secretArn", "transactionId"},
     "rollback_transaction": {"resourceArn", "secretArn", "transactionId"},

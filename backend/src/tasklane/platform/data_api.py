@@ -72,10 +72,15 @@ class DataApiDb:
         self._sleep = sleep
 
     def _call(self, op: str, **kw: Any) -> dict[str, Any]:
+        base = (
+            self._base
+            if op in ("execute_statement", "begin_transaction")
+            else {k: v for k, v in self._base.items() if k != "database"}
+        )  # commit/rollback take no database
         delay = 1.0
         for attempt in range(self._attempts):
             try:
-                result: dict[str, Any] = getattr(self._client, op)(**self._base, **kw)
+                result: dict[str, Any] = getattr(self._client, op)(**base, **kw)
                 return result
             except Exception as exc:
                 if _error_code(exc) != "DatabaseResumingException":
