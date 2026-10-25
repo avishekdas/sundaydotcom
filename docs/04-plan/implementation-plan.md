@@ -26,6 +26,10 @@
 4. No open Sev1/Sev2; **every queue/worker introduced in the milestone ships with its Sev1/Sev2 alarms, a runbook URL in the alarm, a dashboard panel and its DLQ policy** (CDK assertion, PE-7).
 5. Decision log / ADRs updated; traceability diff link.
 6. Demo + system test report reviewed by the user — review time-boxed to 2 working days; spikes and test scaffolding for the next milestone may start during the review (DL-20).
+7. **Independent milestone review**: a reviewer agent that did not build the milestone checks the evidence above against the plan and the requirements (owned ACs, north-star steps, exit criteria) and files findings in `docs/04-plan/milestone-reviews/<milestone>.md`; blocking findings are fixed before the milestone is marked done (user request, 2026-10-25).
+
+### 1.4 Stage adaptation — dev only (D-031)
+Until a second environment exists, everything this plan places on **staging** or **prod** runs on **dev** (account 920824005451, `dev.tasklane.avishekdas.dev`): Tier B runs, `staging_only` steps, migration rehearsals, restore drills, ZAP scans, canary rollback rehearsals, SLO burn and the cost gate. Promotion is `main → dev`. Multi-account work (Organization, staging/prod accounts, org CloudTrail) moves to a **P-launch** step added before the first real users; M9's release gate becomes "full north star on dev" and the prod run moves to P-launch.
 
 ## 2. Releases & milestone map
 | Release | After | Who uses it | What |
@@ -48,7 +52,7 @@
 | M6 | Forms & Kanban | 2 | 2 public lead form (ui); 5 drag card on a Kanban sets Stage (ui) | I1–I3, I7, D5, D9 |
 | M7 | CRM template, timeline, Activities | 3–4 | 1b CRM template (ui); 3 log call → last interaction (ui); 5 on Pipeline view (ui); G6 #5 via real T7 | L1–L6, L8–L10, L14, L15, L18, C38 → **R2** |
 | M8 | Dashboards | 3 | 6 exact dashboard deltas (ui) — **full north star 1–7** | H1–H5, H7, K6, L24 |
-| M9 | Import/export, trash UI, hardening | 3–4 | full north star in **prod** | A11 UI, A13 full, A14, O1, O5, NFR-A/S gates → **R3** |
+| M9 | Import/export, trash UI, hardening | 3–4 | full north star on **dev** (prod at P-launch, D-031) | A11 UI, A13 full, A14, O1, O5, NFR-A/S gates → **R3** |
 | **Total P1** | | **≈ 41–51 weeks + 15 % buffer** for one developer with Claude (DL-1; PE estimate 32–34 is the optimistic edge); re-baselined after M1 from measured velocity | | |
 
 **Dependencies (critical path):** M0a → M0b → M1 → M2 → M3 → M4a → M4b → M5 → M7 → M8 → M9. **One parallel lane only** (second developer): M6 after M5 (its step-5 test needs automations), M3.5 alongside M4a (DL-13, TP-3).
@@ -78,7 +82,7 @@ Stories:
 5. **`scheduler-tick` (PE-10)** with leases, partition pre-creation, outbox/board_changes purge, heartbeat metric + dead-man alarm.
 6. codecs text/numbers/status; skeleton API (boards, schema, query, values PATCH, items:fetch, `/changes` xid cursor with `db_generation`, realtime ticket); fanout → WS.
 7. SPA entity store + reconciler (property tests) + virtualized table.
-8. **Accounts & CDK (PE-3, PE-6, PE-8, PE-13, PE-18)**: dev/staging/prod accounts bootstrapped (OIDC trust per `environment:<stage>`, quotas, SES sandbox-exit request tracked), security baseline (GuardDuty, Security Hub, Config, org CloudTrail); stacks Network, Data (SSM-parameterized endpoints, scheduled 2 ACU floor, `pg_stat_statements`/`auto_explain`), **Identity**, Messaging (delivery-contract assertions: every queue DLQ + alarm with runbook link, every rule/Scheduler target retry + DLQ, KMS grants), Api, Realtime, **Workers**, Edge, Observability; `live` aliases + CodeDeploy canary + automatic rollback; data-stack Replace/Delete gate; fake clock absent from prod (synth test); promotion main → dev → staging.
+8. **Accounts & CDK (PE-3, PE-6, PE-8, PE-13, PE-18)** — *dev only for now (§1.4)*: dev/staging/prod accounts bootstrapped (OIDC trust per `environment:<stage>`, quotas, SES sandbox-exit request tracked), security baseline (GuardDuty, Security Hub, Config, org CloudTrail); stacks Network, Data (SSM-parameterized endpoints, scheduled 2 ACU floor, `pg_stat_statements`/`auto_explain`), **Identity**, Messaging (delivery-contract assertions: every queue DLQ + alarm with runbook link, every rule/Scheduler target retry + DLQ, KMS grants), Api, Realtime, **Workers**, Edge, Observability; `live` aliases + CodeDeploy canary + automatic rollback; data-stack Replace/Delete gate; fake clock absent from prod (synth test); promotion main → dev → staging.
 9. `make dev` local stack (DL-9).
 10. One Cognito test user (TOTP seed in Secrets Manager) on dev/staging so the M0b Tier B run can sign in; full test-identity fixtures follow in M1.
 Owned ACs: none from requirements (platform). Contract tests: AR-2/DX-3 (reorder/drop, subscribe-then-load), delivery contract, event schema replay, DB role tests (`reader` cannot write).
