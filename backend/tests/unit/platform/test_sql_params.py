@@ -1,4 +1,5 @@
 """Unit tests for named-parameter handling shared by all Db adapters (arch 03 §3.9, ADR-002)."""
+
 from decimal import Decimal
 
 import pytest
@@ -20,7 +21,9 @@ class TestToPyformat:
         assert to_pyformat("select 'a%' like :p") == "select 'a%%' like %(p)s"
 
     def test_quoted_identifiers_are_untouched(self) -> None:
-        assert to_pyformat('select "col:x" from t where id = :id') == 'select "col:x" from t where id = %(id)s'
+        assert (
+            to_pyformat('select "col:x" from t where id = :id') == 'select "col:x" from t where id = %(id)s'
+        )
 
 
 class TestValidateParams:
@@ -31,7 +34,7 @@ class TestValidateParams:
     @pytest.mark.parametrize("value", [[1, 2], (1,), {1}, {"a": 1}])
     def test_arrays_and_raw_containers_are_rejected(self, value: object) -> None:
         # Data API has no array parameters (AR-4); containers must be passed explicitly as Json(...)
-        with pytest.raises(DataApiRuleViolation, match="array|container"):
+        with pytest.raises(DataApiRuleViolation, match=r"array|container"):
             validate_params("select :p", {"p": value})
 
     def test_float_is_rejected_use_decimal(self) -> None:
@@ -48,11 +51,13 @@ class TestValidateParams:
 
 
 class TestValidateSql:
-    @pytest.mark.parametrize("sql", ["select 1 where x = any(:ids)", "select 1 where x = ANY ( :ids )",
-                                     "select 1 where x <> all(:ids)"])
+    @pytest.mark.parametrize(
+        "sql",
+        ["select 1 where x = any(:ids)", "select 1 where x = ANY ( :ids )", "select 1 where x <> all(:ids)"],
+    )
     def test_any_all_over_parameter_is_rejected(self, sql: str) -> None:
         # PERF-18: use `in (select ... from jsonb_array_elements_text(:p::jsonb))` or containment
-        with pytest.raises(DataApiRuleViolation, match="any|all"):
+        with pytest.raises(DataApiRuleViolation, match=r"any|all"):
             validate_sql(sql)
 
     def test_any_over_subquery_is_fine(self) -> None:

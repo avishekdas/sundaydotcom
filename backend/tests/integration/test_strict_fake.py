@@ -1,4 +1,5 @@
 """StrictDataApiFake must behave like the RDS Data API on the rules that bite (AR-4, AR-21, AR-24)."""
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -21,8 +22,10 @@ def db(pg_uri: str) -> Iterator[StrictDataApiFake]:
 
 
 def test_roundtrip_types(db: StrictDataApiFake) -> None:
-    db.execute("insert into t_fake values (:id, :v::jsonb, :n, :s)",
-               {"id": 1, "v": Json({"c": {"l": 3}}), "n": Decimal("12.50"), "s": "x"})
+    db.execute(
+        "insert into t_fake values (:id, :v::jsonb, :n, :s)",
+        {"id": 1, "v": Json({"c": {"l": 3}}), "n": Decimal("12.50"), "s": "x"},
+    )
     rows = db.query("select id, v, n, s from t_fake where id = :id", {"id": 1})
     assert rows == [{"id": 1, "v": {"c": {"l": 3}}, "n": Decimal("12.50"), "s": "x"}]
 
@@ -30,8 +33,11 @@ def test_roundtrip_types(db: StrictDataApiFake) -> None:
 def test_json_set_param_idiom_works(db: StrictDataApiFake) -> None:
     for i in (1, 2, 3):
         db.execute("insert into t_fake (id) values (:id)", {"id": i})
-    rows = db.query("select id from t_fake where id in "
-                    "(select jsonb_array_elements_text(:ids::jsonb)::bigint) order by id", {"ids": Json([1, 3])})
+    rows = db.query(
+        "select id from t_fake where id in "
+        "(select jsonb_array_elements_text(:ids::jsonb)::bigint) order by id",
+        {"ids": Json([1, 3])},
+    )
     assert [r["id"] for r in rows] == [1, 3]
 
 
