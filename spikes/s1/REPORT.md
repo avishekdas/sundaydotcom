@@ -2,7 +2,7 @@
 
 **Date:** 2026-10-25 · **Where:** Lambda `tasklane-spike-s1` (python3.13, arm64, 1 GB) → RDS Data API → Aurora PostgreSQL 18.6 Serverless v2, us-east-1 (same region, production-like path).
 **Data:** board 1 = 20,000 items, board 2 = 100,000 items; 60 columns per item (10 status, 10 numbers, 10 text, 10 date, 10 people, 10 dropdown); avg `values` document 1,047 bytes; 4 groups.
-**Method:** each query 20 runs (writes 50), end-to-end latency measured inside the Lambda (includes Data API). Query variants checked for identical results locally first (`test_bench_sql.py`).
+**Method:** each query 20 runs (writes 50), end-to-end latency measured inside the Lambda (includes Data API). Query variants checked for identical results locally first (`check_bench_sql.py`).
 
 ## Thresholds (plan §3 M0a, D-023)
 | Metric | Threshold |

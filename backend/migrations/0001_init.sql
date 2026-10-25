@@ -90,25 +90,40 @@ create table tl.views (id bigint primary key default nextval('tl.id_seq'), board
 create table tl.view_item_positions (view_id bigint references tl.views, item_id bigint references tl.items,
   position text collate "C" not null, primary key (view_id, item_id));
 
--- Daily partitions for append-only logs (PERF-16); scheduler-tick (tl_worker) pre-creates ahead.
-create function tl.ensure_daily_partitions(parent regclass, from_day date, days int) returns int
+-- Partitions for append-only logs (PERF-16); scheduler-tick (tl_worker) pre-creates ahead.
+-- SECURITY DEFINER, so it is bounded to known parents and a small horizon, and only tl_worker may call it (M0A-2).
+create function tl.ensure_partitions(parent regclass, from_day date, n int, step text) returns int
 language plpgsql security definer set search_path = pg_catalog, tl as $$
 declare
   base text := (select relname from pg_class where oid = parent);
-  d date; made int := 0; part text;
+  d date; nxt date; made int := 0; part text;
 begin
-  for i in 0 .. days - 1 loop
-    d := from_day + i;
-    part := base || '_p' || to_char(d, 'YYYYMMDD');
+  if parent not in ('tl.board_changes'::regclass, 'tl.outbox'::regclass, 'tl.activity_log'::regclass) then
+    raise exception 'ensure_partitions: % is not a partitioned log table', parent;
+  end if;
+  if n < 1 or n > 31 or step not in ('day', 'month') then
+    raise exception 'ensure_partitions: n must be 1..31 and step day|month (got %, %)', n, step;
+  end if;
+  for i in 0 .. n - 1 loop
+    if step = 'day' then
+      d := from_day + i; nxt := d + 1; part := base || '_p' || to_char(d, 'YYYYMMDD');
+    else
+      d := (date_trunc('month', from_day) + make_interval(months => i))::date;
+      nxt := (d + interval '1 month')::date; part := base || '_p' || to_char(d, 'YYYYMM');
+    end if;
     if to_regclass('tl.' || part) is null then
       execute format('create table tl.%I partition of %s for values from (%L) to (%L)', part, parent,
-        (d::timestamp at time zone 'UTC'), ((d + 1)::timestamp at time zone 'UTC'));
+        (d::timestamp at time zone 'UTC'), (nxt::timestamp at time zone 'UTC'));
       made := made + 1;
     end if;
   end loop;
   return made;
 end $$;
-grant execute on function tl.ensure_daily_partitions(regclass, date, int) to tl_worker;
+create function tl.ensure_daily_partitions(parent regclass, from_day date, days int) returns int
+language sql security definer set search_path = pg_catalog, tl
+as $$ select tl.ensure_partitions(parent, from_day, days, 'day') $$;
+revoke execute on function tl.ensure_partitions(regclass, date, int, text), tl.ensure_daily_partitions(regclass, date, int) from public;
+grant execute on function tl.ensure_partitions(regclass, date, int, text), tl.ensure_daily_partitions(regclass, date, int) to tl_worker;
 
 create table tl.board_changes (seq bigserial, board_id bigint not null, item_id bigint,
   kind text not null check (kind in ('value','computed','links','moved','archived','deleted','restored','structure')),
@@ -128,8 +143,16 @@ create table tl.outbox (id bigserial, event_id uuid not null, type text not null
   primary key (id, created_at), unique (event_id, created_at)) partition by range (created_at);
 create index outbox_unpublished on tl.outbox (id) where published_at is null;
 
-select tl.ensure_daily_partitions('tl.board_changes', current_date - 1, 4);
-select tl.ensure_daily_partitions('tl.outbox', current_date - 1, 4);
+create table tl.activity_log (id bigint not null default nextval('tl.id_seq'), board_id bigint not null, item_id bigint,
+  actor_type text not null, actor_id bigint, kind text not null, column_id text, before jsonb, after jsonb,
+  at timestamptz not null default now(), primary key (id, at)) partition by range (at);   -- monthly, kept 12 months (A15.4)
+create index activity_log_board on tl.activity_log (board_id, at desc);
+create index activity_log_item on tl.activity_log (item_id, at desc) where item_id is not null;
+
+-- Horizon: yesterday + 7 days ahead (M0A-15) so a stalled scheduler-tick has a week before writes fail.
+select tl.ensure_partitions('tl.board_changes', current_date - 1, 9, 'day');
+select tl.ensure_partitions('tl.outbox', current_date - 1, 9, 'day');
+select tl.ensure_partitions('tl.activity_log', current_date, 3, 'month');
 
 create table tl.idempotency_keys (key text not null, user_id bigint not null, request_hash text not null,
   status text not null default 'in_progress', response jsonb, created_at timestamptz not null default now(),
@@ -141,7 +164,19 @@ create table tl.jobs (id bigint primary key default nextval('tl.id_seq'), type t
 create table tl.audit_events (id bigint primary key default nextval('tl.id_seq'), actor_id bigint, kind text not null,
   target jsonb, ip inet, user_agent text, at timestamptz not null default now());
 
+-- Indexes for the permission snapshot and FK lookups (M0A-16)
+create index board_members_principal on tl.board_members (principal_type, principal_id);
+create index workspace_members_user on tl.workspace_members (user_id);
+create index groups_board on tl.groups (board_id);
+create index views_board on tl.views (board_id);
+create index idempotency_keys_created on tl.idempotency_keys (created_at);
+
+-- The singleton account row: the epoch guard (03 §3.5) reads perm_epoch from it (M0A-16).
+insert into tl.account (name, date_format, week_start) values ('Tasklane', 'YYYY-MM-DD', 1);
+
 -- Exceptions to the default grants (07 §7.3 least privilege) --------------------------------------
+revoke insert, delete on tl.account from tl_api_rw, tl_worker;    -- singleton (M0A-4)
+revoke delete on tl.outbox from tl_api_rw;                         -- only the purge (tl_worker) deletes
 revoke all on tl.audit_events from tl_reader, tl_worker;
 revoke update, delete on tl.audit_events from tl_api_rw;          -- append-only
 grant insert on tl.audit_events to tl_audit_writer;
@@ -150,4 +185,4 @@ grant insert on tl.audit_events to tl_audit_writer;
 grant select on tl.account, tl.workspaces, tl.boards, tl.board_members, tl.groups, tl.columns, tl.views,
   tl.items, tl.item_links, tl.item_text, tl.recompute_pending, tl.idempotency_keys to tl_worker_forms;
 grant insert, update on tl.items, tl.item_links, tl.item_text, tl.recompute_pending, tl.idempotency_keys to tl_worker_forms;
-grant insert on tl.board_changes, tl.outbox to tl_worker_forms;
+grant insert on tl.board_changes, tl.outbox, tl.activity_log to tl_worker_forms;

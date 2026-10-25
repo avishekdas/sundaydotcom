@@ -35,3 +35,17 @@
 
 ## Verdict
 **M0a done after fixes: M0A-1, M0A-2** (both are small changes to `0000_bootstrap`/`0001_init` and their tests; fix them in place before any environment applies these migrations). Should-fix items M0A-3…M0A-13 should be closed or explicitly carried into the M0b plan before M0b's Mutation builder or migrate λ work depends on them.
+
+## Resolution (builder, 2026-10-25)
+| ID | Resolution |
+|---|---|
+| M0A-1, M0A-2 | **Fixed in place** (no environment had applied the migrations): sequence grant to `tl_audit_writer`; `ensure_partitions` bounded to the three log tables and 1–31 steps, EXECUTE revoked from PUBLIC globally and granted to `tl_worker` only. Tests: `test_audit_writer_inserts_with_default_id`, `test_only_worker_may_create_partitions`, `test_partition_function_is_bounded` (red run committed first). |
+| M0A-4 | Partly fixed: `tl.account` insert/delete and `tl.outbox` delete revoked from `tl_api_rw`; table-scoped `worker_*` roles carried into M0b (added as each worker is built). |
+| M0A-5 | Fixed: `tl.activity_log` (monthly partitions, indexes), grants incl. `tl_worker_forms`. |
+| M0A-7, M0A-20 | Fixed: plan S-2a row, cost table (Bot Control Common), arch 07 §7.4, data-model GIN/lz4 notes, D-027 wording, `.DS_Store` removed. |
+| M0A-12 | CI has now run on GitHub (green, ≈ 30 s backend job); triggers on every pushed branch; coverage gate `--cov-fail-under=90`. |
+| M0A-13 | Status line changed to "done after review fixes"; SES request listed as open. |
+| M0A-15, M0A-16 | Fixed: 7-day partition horizon; seeded `tl.account` row; snapshot/FK/purge indexes. |
+| M0A-18 | Fixed: spike checks renamed `check_*.py`; the vacuous assertion was **false** — see M0A-21. |
+| M0A-21 (new) | The S-4 data shape had no mixed-contributor contacts; re-checked with 1,000 mixed contacts — fold == join, drift 0 (S-4 REPORT addendum). |
+| M0A-3, 6, 8, 9, 10, 11, 14, 19 | Carried into M0b/M2/M4b — listed in the plan under "Carried from the M0a review". |

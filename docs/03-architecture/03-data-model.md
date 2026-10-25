@@ -99,8 +99,8 @@ create table tl.items (id bigint primary key, board_id bigint not null reference
   updated_by_type text, updated_by bigint, updated_at timestamptz not null default now());
 create index items_board_list on tl.items (board_id, state, group_id, position);
 create index items_parent on tl.items (parent_item_id) where parent_item_id is not null;
-create index items_values_gin on tl.items using gin (board_id, values jsonb_path_ops);   -- btree_gin composite (PERF-11); kept only if Spike S-1 shows benefit
-alter table tl.items alter column values set compression lz4, alter column computed set compression lz4;   -- PERF-9
+create index items_values_gin on tl.items using gin (board_id, values jsonb_path_ops);   -- btree_gin composite (PERF-11); kept: S-1 showed ≈10× on selective filters
+-- TOAST lz4 via the Aurora parameter default_toast_compression (D-028), not per-column DDL (PERF-9)
 alter table tl.items set (fillfactor = 90);   -- HOT updates for computed-only changes (PERF-11)
 -- long text / rich values live out of the hot document (PERF-9):
 create table tl.item_text (item_id bigint not null, column_id text not null, body text not null,

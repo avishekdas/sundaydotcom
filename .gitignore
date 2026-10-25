@@ -11,3 +11,4 @@ cdk.out/
 *.egg-info/
 .coverage
 spikes/**/*.zip
+.DS_Store

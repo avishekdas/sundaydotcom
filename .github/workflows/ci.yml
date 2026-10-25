@@ -1,6 +1,6 @@
 name: ci
 on:
-  push: { branches: [main] }
+  push: { branches: ["**"] }   # every pushed commit, so red runs are recorded (TP-6)
   pull_request:
 concurrency: { group: "ci-${{ github.ref }}", cancel-in-progress: true }
 jobs:
@@ -26,7 +26,7 @@ jobs:
       - run: uv run ruff format --check .
       - run: uv run mypy src
       - run: uv run lint-imports
-      - run: uv run pytest --cov=tasklane --cov-report=term-missing
+      - run: uv run pytest --cov=tasklane --cov-report=term-missing --cov-fail-under=90
   infra:
     runs-on: ubuntu-24.04
     timeout-minutes: 10

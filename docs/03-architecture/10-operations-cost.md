@@ -49,7 +49,7 @@ Pipeline: PR (budget ≤ 10 min): `lint` (ruff, mypy --strict, import-linter, es
 | EventBridge + SQS (incl. idle pollers on 9 queues) | ~20 M | $10 | $10 |
 | DynamoDB | | $4 | $4 |
 | CloudFront (2 dists) + WAF ACL + rules | | $15 | $15 |
-| WAF Bot Control (challenge SDK for forms) | targeted, low volume | $12 | $12 |
+| WAF Bot Control (challenge SDK for forms) | Common level, scope-down `/forms/*` (S-2a) | $11 | $11 |
 | Cognito Essentials | ≤ 10k MAU | $0 | $0 |
 | CloudWatch logs, metrics, ~35 alarms | 30 d / 7 d retention | $25 | $15 |
 | Synthetics canaries | every 5 min / every 15 min | $20 | $7 |

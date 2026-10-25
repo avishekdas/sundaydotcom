@@ -26,5 +26,7 @@ alter table tl.schema_migrations owner to tl_migrator;
 -- Everything tl_migrator creates from here on is granted by default; exceptions are revoked per table.
 alter default privileges for role tl_migrator in schema tl grant select on tables to tl_reader;
 alter default privileges for role tl_migrator in schema tl grant select, insert, update, delete on tables to tl_api_rw, tl_worker;
-alter default privileges for role tl_migrator in schema tl grant usage, select on sequences to tl_api_rw, tl_worker, tl_worker_forms;
-alter default privileges for role tl_migrator in schema tl revoke execute on functions from public;
+alter default privileges for role tl_migrator in schema tl grant usage, select on sequences to tl_api_rw, tl_worker, tl_worker_forms, tl_audit_writer;
+-- Functions: the per-schema form cannot remove PUBLIC's EXECUTE (M0A-2), so revoke globally for the migrator
+-- and grant each function explicitly where it is created.
+alter default privileges for role tl_migrator revoke execute on functions from public;

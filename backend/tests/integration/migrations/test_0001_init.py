@@ -113,7 +113,7 @@ def test_api_rw_has_dml_but_no_ddl_and_audit_is_append_only(db_uri: str) -> None
     with as_role(db_uri, "tl_api_rw") as c:
         seed(c)
         c.execute("update tl.boards set name = 'B2' where id = 1")
-        c.execute("insert into tl.audit_events (id, kind) values (1, 'sign_in')")
+        c.execute("insert into tl.audit_events (kind) values ('sign_in')")
         with pytest.raises(errors.InsufficientPrivilege):
             c.execute("update tl.audit_events set kind = 'x'")
         with pytest.raises(errors.InsufficientPrivilege):
@@ -141,7 +141,7 @@ def test_worker_forms_is_limited_to_item_create(db_uri: str) -> None:
 
 def test_audit_writer_only_inserts_audit(db_uri: str) -> None:
     with as_role(db_uri, "tl_audit_writer") as c:
-        c.execute("insert into tl.audit_events (id, kind) values (2, 'k')")
+        c.execute("insert into tl.audit_events (kind) values ('k')")
         with pytest.raises(errors.InsufficientPrivilege):
             c.execute("select count(*) from tl.items")
 
@@ -170,7 +170,10 @@ def test_only_worker_may_create_partitions(db_uri: str, role: str) -> None:  # M
 
 def test_partition_function_is_bounded(db_uri: str) -> None:  # M0A-2
     with as_role(db_uri, "tl_worker") as c:
-        assert c.execute("select tl.ensure_daily_partitions('tl.outbox', current_date, 3)").fetchone() is not None
+        assert (
+            c.execute("select tl.ensure_daily_partitions('tl.outbox', current_date, 3)").fetchone()
+            is not None
+        )
         with pytest.raises(errors.RaiseException):
             c.execute("select tl.ensure_daily_partitions('tl.outbox', current_date, 400)")
         with pytest.raises(errors.RaiseException):
@@ -187,9 +190,13 @@ def test_api_cannot_delete_singletons_or_write_audit_directly(db_uri: str) -> No
 
 def test_activity_log_is_written_with_monthly_partitions(db_uri: str) -> None:  # M0A-5
     with as_role(db_uri, "tl_api_rw") as c:
-        c.execute("insert into tl.activity_log (board_id, actor_type, kind) values (1, 'user', 'item.created')")
+        c.execute(
+            "insert into tl.activity_log (board_id, actor_type, kind) values (1, 'user', 'item.created')"
+        )
     with as_role(db_uri, "tl_worker_forms") as c:
-        c.execute("insert into tl.activity_log (board_id, actor_type, kind) values (1, 'form', 'item.created')")
+        c.execute(
+            "insert into tl.activity_log (board_id, actor_type, kind) values (1, 'form', 'item.created')"
+        )
 
 
 def test_account_row_is_seeded(db_uri: str) -> None:  # M0A-16: the epoch guard reads it

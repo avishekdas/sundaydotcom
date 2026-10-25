@@ -25,14 +25,20 @@ def local_sql(stmt, params=None):
 
 
 bench4.sql = local_sql
-small = {"c": 2000, "a": 200, "d": 4000}
+# c not a multiple of 4, so contacts get deals from BOTH boards (mixed contributors; M0a review)
+small = {"c": 2001, "a": 200, "d": 4002}
 print(bench4.handler({"action": "setup", **small}, None))
 print(bench4.handler({"action": "full_recompute", "chunk": 500, **small}, None))
+mixed = local_sql("""select count(*) n from (select from_item_id from s4_links where column_id = 'contact_deal'
+                     group by 1 having count(distinct to_board_id) = 2) x""")[0]["n"]
+assert mixed > 0, "data shape must include mixed contributors"
+print("mixed-contributor contacts:", mixed)
 vis = json.dumps(["40"])
 fold = [(r["id"], r["v"]) for r in local_sql(bench4.Q_VIEWER_FOLD, {"vis": vis})]
 join = [(r["id"], r["v"]) for r in local_sql(bench4.Q_VIEWER_JOIN, {"vis": vis})]
 assert fold and fold == join, (len(fold), len(join), fold[:3], join[:3])
-assert all(r["partial"] for r in local_sql(bench4.Q_VIEWER_FOLD, {"vis": vis})[:50]) or True
+# a partial viewer must see at least some partial values (contacts whose deals are all on board 40 are complete)
+assert any(r["partial"] for r in local_sql(bench4.Q_VIEWER_FOLD, {"vis": vis}))
 print("fold == join for partial viewer:", len(fold), "rows")
 print(bench4.handler({"action": "drift"}, None))
 print(bench4.handler({"action": "bulk", "batch": 100, **small}, None))
