@@ -152,3 +152,10 @@ def test_fault_injection_only_outside_prod(
         )["statusCode"]
         == 401
     )
+
+
+def test_expired_cursor_returns_410(deps: Deps) -> None:
+    from tasklane.workmgmt.boards import encode_cursor
+
+    status, body = call(deps, "POST", "/api/v1/boards/10/changes", {"since_xmin": encode_cursor(1, 0, 1_700_000_000)})
+    assert status == 410 and body["error"]["code"] == "gone"

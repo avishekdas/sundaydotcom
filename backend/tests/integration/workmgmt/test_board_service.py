@@ -99,3 +99,37 @@ def test_change_cursor_returns_writes_after_the_cursor_exactly_once(board_db: st
     assert [c["item_id"] for c in first["changes"]] == ["1003", "1002", "1001"]
     again = changes(db, 10, since_xmin=first["next_since_xmin"])
     assert again["changes"] == []
+
+
+# --- M0B-1: paging and expiry of the change cursor -------------------------------------------------------
+
+
+def test_change_cursor_pages_without_skipping(board_db: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tasklane.workmgmt import boards as b
+
+    monkeypatch.setattr(b, "CHANGES_PAGE", 2)
+    db = StrictDataApiFake(board_db)
+    cur = changes(db, 10, since_xmin=None)["next_since_xmin"]
+    for k in range(5):
+        set_values(db, ADA, [1001, 1002, 1003][k % 3], {"note": f"n{k}"}, mutation_id=f"m{k}")
+    seen: list[int] = []
+    pages = 0
+    while True:
+        page = changes(db, 10, since_xmin=cur)
+        seen += [c["seq"] for c in page["changes"]]
+        cur = page["next_since_xmin"]
+        pages += 1
+        if not page["more"]:
+            break
+    assert pages == 3 and len(seen) == 5 and len(set(seen)) == 5
+
+
+def test_expired_cursor_is_gone(board_db: str) -> None:
+    from tasklane.workmgmt.boards import CursorExpired, encode_cursor
+
+    db = StrictDataApiFake(board_db)
+    old = encode_cursor(xid=1, seq=0, issued=1_700_000_000)  # 2023
+    with pytest.raises(CursorExpired):
+        changes(db, 10, since_xmin=old)
+    with pytest.raises(ValidationFailed):
+        changes(db, 10, since_xmin="garbage")
