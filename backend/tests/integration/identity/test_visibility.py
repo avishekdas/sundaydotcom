@@ -7,9 +7,11 @@ Data API rules (no array parameters, AR-4).
 Rules (07 §7.2): deactivated → nothing; admin → every active board (K1.1 admin override); explicit board member
 → that board regardless of workspace (K2.1); main board → visible when its workspace is open or the user is a
 workspace member (K2); guest → only shareable boards they are invited to; subitem boards follow their parent
-board (B7.7); archived/deleted boards and boards in archived workspaces are not visible; items must be active;
+board (B7.7) and are hidden when either is archived; archived/deleted boards and boards in archived workspaces are not visible; items must be active;
 on `row_visibility='related'` boards (Activities, D-016/D-020) an item is visible only when it links to an
-active item on a board the user can see.
+active item on a board the user can see, through the `related_item` column only.
+
+The world was sharpened by mutating the builder: every condition in it is needed by at least one row.
 """
 
 from __future__ import annotations
@@ -39,6 +41,8 @@ insert into tl.boards (id, workspace_id, parent_board_id, name, kind, row_visibi
   (112, 100, null, 'A1 activities',  'main',      'related', 'active',   'c'),
   (113, 100, null, 'X1 archived',    'main',      'board',   'archived', 'd'),
   (114, 100, 110,  'SUB1 of M1',     'main',      'board',   'active',   'e'),
+  (115, 100, 113,  'SUB of archived','main',      'board',   'active',   'f'),
+  (116, 100, 110,  'SUB archived',   'main',      'board',   'archived', 'g'),
   (210, 200, null, 'M2 main',        'main',      'board',   'active',   'a'),
   (211, 200, null, 'P2 private',     'private',   'board',   'active',   'b'),
   (212, 200, null, 'S2 shareable',   'shareable', 'board',   'active',   'c'),
@@ -54,6 +58,8 @@ insert into tl.items (id, board_id, group_id, name, position, created_by_type, s
   (1111, 111, 1110, 'p1 item',      'a', 'user', 'active',  null),
   (1131, 113, 1130, 'x1 item',      'a', 'user', 'active',  null),
   (1141, 114, 1140, 'sub1 item',    'a', 'user', 'active',  1101),
+  (1151, 115, 1150, 'sub of x1',    'a', 'user', 'active',  1131),
+  (1161, 116, 1160, 'archived sub', 'a', 'user', 'active',  1101),
   (2101, 210, 2100, 'm2 item',      'a', 'user', 'active',  null),
   (2111, 211, 2110, 'p2 item',      'a', 'user', 'active',  null),
   (2121, 212, 2120, 's2 item',      'a', 'user', 'active',  null),
@@ -63,11 +69,12 @@ insert into tl.items (id, board_id, group_id, name, position, created_by_type, s
   (1122, 112, 1120, 'act → p1',     'b', 'user', 'active',  null),
   (1123, 112, 1120, 'act → p2+m1',  'c', 'user', 'active',  null),
   (1124, 112, 1120, 'act → none',   'd', 'user', 'active',  null),
-  (1125, 112, 1120, 'act → deleted','e', 'user', 'active',  null);
+  (1125, 112, 1120, 'act → deleted','e', 'user', 'active',  null),
+  (1126, 112, 1120, 'act ~ m1 (other column)', 'f', 'user', 'active', null);
 insert into tl.item_links (board_id, column_id, from_item_id, to_item_id, to_board_id, position) values
   (112, 'related_item', 1121, 1101, 110, 'a'), (112, 'related_item', 1122, 1111, 111, 'a'),
   (112, 'related_item', 1123, 2111, 211, 'a'), (112, 'related_item', 1123, 1101, 110, 'b'),
-  (112, 'related_item', 1125, 1102, 110, 'a');
+  (112, 'related_item', 1125, 1102, 110, 'a'), (112, 'contact', 1126, 1101, 110, 'a');
 """
 
 # user → (visible boards, visible items)
