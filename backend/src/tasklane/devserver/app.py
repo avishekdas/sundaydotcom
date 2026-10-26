@@ -93,12 +93,10 @@ def create_app(*, pg_uri: str | None = None, seed: bool = True) -> Starlette:
             {
                 "stage": "local",
                 "apiBase": "/api/v1",
+                "authBase": "/api/auth",
                 "wsPath": "/ws",
                 "auth": "dev",
                 "devToken": f"dev-{DEV_SUB}",
-                "region": "local",
-                "userPoolId": "",
-                "clientId": "",
             }
         )
 

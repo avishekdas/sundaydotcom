@@ -102,7 +102,7 @@ class ApiStack(cdk.Stack):
             auto_rollback=codedeploy.AutoRollbackConfig(failed_deployment=True, deployment_in_alarm=True),
         )
         jwt = authz.HttpJwtAuthorizer(
-            "Jwt", identity.issuer, jwt_audience=[identity.client.user_pool_client_id]
+            "Jwt", identity.issuer, jwt_audience=[identity.proxy_client.user_pool_client_id]
         )
         self.http_api = apigw.HttpApi(
             self,

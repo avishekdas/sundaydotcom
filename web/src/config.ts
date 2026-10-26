@@ -1,8 +1,6 @@
 export interface AppConfig {
-  region: string;
-  userPoolId: string;
-  clientId: string;
   apiBase: string;
+  authBase: string;
   wsPath: string;
   stage: string;
   auth?: "cognito" | "dev"; // "dev" only from the local devserver (make dev)

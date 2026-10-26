@@ -79,7 +79,10 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
 - **Desktop (Mac) sessions** have no `/home/claude` cloud clone: work, commit and `git push` directly in `~/tasklane`
   (push works with the Mac's git credentials). Gates locally need `JSII_RUNTIME_PACKAGE_CACHE=disabled` (jsii refuses
   the group-writable `~/Library/Caches`) and a one-off `npm ci` in `web/`. The AWS MCP connector can drop mid-session
-  ("connection invalidated" → user reconnects it); the Mac has no AWS profile for account 920824005451.
+  ("connection invalidated" → user reconnects it). **On the Mac use the static profile `avishek`** (= account
+  920824005451, IAM user `developer`): `export AWS_PROFILE=avishek AWS_REGION=us-east-1` (zsh does not word-split a
+  `$P="--profile …"` variable). AWS CLI is 2.38 (pkg installer, not Homebrew). Data API reads: `aws rds-data
+  execute-statement` with secret `tasklane/dev/db/tl_api_rw` and the `tasklane-dev-data-cluster…` ARN.
 - moto: `revoke_token` is not implemented and pools ignore `UsernameConfiguration.CaseSensitive` (CognitoIdp
   lower-cases emails itself); test revoke on the fake + Tier B.
 - The user prefers questions **one at a time**, each with the context needed to answer (AskUserQuestion has failed in
@@ -117,9 +120,16 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
     (2) auth proxy `/api/auth/*` (07 §7.1 incl. D-043/D-044, SEC-5/SEC-6, refresh cookie 30 d), AC-K7-2 in Tier A via
     injected `CloudFront-Viewer-Address`; (3) SPA on the proxy (direct `USER_PASSWORD_AUTH` removed);
     (4) forgot/reset (Cognito default email) + revocation, AC-K7-3. Two-IP dev probe λ goes into the M1 system test.
-  - **sub-story 1 done** (6055181; Tier B 40380217106 green as the scripted admin). Still open: retire user `a`
-    (deactivate row, disable in Cognito, delete secret `tasklane/dev/test-users/a`) — needs AWS access.
-  - **sub-story 2** (auth proxy backend) decided D-050 (origin secret in SSM), D-051 (proxy inside the api λ,
+  - **sub-story 1 done** (6055181; Tier B 40380217106 green as the scripted admin). User `a` retired 2026-10-26:
+    `tl.users` id 1 deactivated, disabled in Cognito, secret `tasklane/dev/test-users/a` scheduled for deletion
+    (recoverable until 2026-11-02).
+  - **sub-story 2 done** (84e5fba; Tier B 40382795487 green incl. `e2e/auth-proxy.spec.ts` through real CloudFront +
+    Cognito: origin secret and `CloudFront-Viewer-Address` arrive, cookie set, 6th attempt → 429).
+  - **sub-story 3** (SPA on the proxy): green pushed; **phase 2 still owed** — delete the retired `tasklane-dev-web`
+    client and its `export_value` once api/edge no longer import it (strict xfail `test_only_the_proxy_client_remains`).
+    Learning: CDK cross-stack refs become CloudFormation exports; removing a resource another stack imports needs
+    two deploys (switch consumers, then delete).
+  - sub-story 2 decisions: D-050 (origin secret in SSM), D-051 (proxy inside the api λ,
     Cognito actions limited to AdminInitiateAuth + AdminUserGlobalSignOut), D-052 (per-browser sign-out +
     `/api/v1/me/sign-out-everywhere`). Tier B `e2e/auth-proxy.spec.ts` uses a random unknown email per run for the
     lockout check so no test user is ever locked.

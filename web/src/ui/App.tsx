@@ -17,7 +17,7 @@ export function App() {
       .then(async (c) => {
         setCfg(c);
         if (c.auth === "dev" && c.devToken) setSession({ accessToken: c.devToken, expiresAt: Number.MAX_SAFE_INTEGER });
-        else setSession(await refresh(c));
+        else setSession(await refresh());
       })
       .catch((e: Error) => setError(e.message))
       .finally(() => setBooting(false));
@@ -26,16 +26,16 @@ export function App() {
   if (booting) return <div className="center muted">Loading…</div>;
   if (!cfg) return <div className="center error">{error}</div>;
   if (!session) {
-    return <SignIn onSubmit={async (email, pw) => {
+    return <SignIn onSubmit={async (email, pw, onRetry) => {
       setError(null);
-      try { setSession(await signIn(cfg, email, pw)); } catch (e) { setError((e as Error).message); }
+      try { setSession(await signIn(email, pw, { onRetry })); } catch (e) { setError((e as Error).message); }
     }} error={error} />;
   }
 
   let current = session;
   const token = async () => {
     if (Date.now() > current.expiresAt) {
-      const s = await refresh(cfg);
+      const s = await refresh();
       if (!s) { setSession(null); throw new Error("Session expired"); }
       current = s;
       setSession(s);
@@ -49,23 +49,32 @@ export function App() {
       <header className="topbar">
         <span className="brand">Tasklane</span>
         <span className="stage">{cfg.stage}</span>
-        <button className="link" onClick={() => { signOut(); setSession(null); }}>Sign out</button>
+        <button className="link" data-testid="sign-out" onClick={() => { void signOut(); setSession(null); }}>Sign out</button>
       </header>
       <BoardView api={api} boardId={boardId} stage={cfg.stage} />
     </div>
   );
 }
 
-function SignIn({ onSubmit, error }: { onSubmit: (e: string, p: string) => Promise<void>; error: string | null }) {
+function SignIn({ onSubmit, error }: {
+  onSubmit: (e: string, p: string, onRetry: () => void) => Promise<void>;
+  error: string | null;
+}) {
   const [email, setEmail] = useState("");
   const [pw, setPw] = useState("");
   const [busy, setBusy] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   return (
-    <form className="signin" onSubmit={async (e) => { e.preventDefault(); setBusy(true); await onSubmit(email, pw); setBusy(false); }}>
+    <form className="signin" onSubmit={async (e) => {
+      e.preventDefault(); setBusy(true); setRetrying(false);
+      await onSubmit(email, pw, () => setRetrying(true));
+      setBusy(false); setRetrying(false);
+    }}>
       <h1>Sign in to Tasklane</h1>
       <label>Email<input data-testid="email" type="email" autoComplete="username" value={email} onChange={(e) => setEmail(e.target.value)} required /></label>
       <label>Password<input data-testid="password" type="password" autoComplete="current-password" value={pw} onChange={(e) => setPw(e.target.value)} required /></label>
       {error && <p className="error" role="alert">{error}</p>}
+      {retrying && <p className="muted" role="status">Signing you in…</p>}
       <button data-testid="sign-in" disabled={busy}>{busy ? "Signing in…" : "Sign in"}</button>
     </form>
   );

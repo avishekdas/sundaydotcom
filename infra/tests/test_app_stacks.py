@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import aws_cdk as cdk
+import pytest
 from aws_cdk.assertions import Match, Template
 
 from tests.conftest import template
@@ -20,12 +21,23 @@ def test_user_pool_is_admin_invite_only_with_strong_passwords(app: cdk.App) -> N
     )
 
 
+def _clients(app: cdk.App) -> list[dict[str, object]]:
+    t = template(app, "tasklane-dev-identity")
+    return [c["Properties"] for c in t.find_resources("AWS::Cognito::UserPoolClient").values()]
+
+
 def test_no_browser_facing_password_client(app: cdk.App) -> None:
     """The SPA signs in only through the auth proxy (07 §7.1, sub-story 3): no client allows direct password auth."""
-    t = template(app, "tasklane-dev-identity")
-    clients = [c["Properties"] for c in t.find_resources("AWS::Cognito::UserPoolClient").values()]
-    assert [c["ClientName"] for c in clients] == ["tasklane-dev-proxy"]
-    assert all("ALLOW_USER_PASSWORD_AUTH" not in c.get("ExplicitAuthFlows", []) for c in clients)
+    assert all("ALLOW_USER_PASSWORD_AUTH" not in c.get("ExplicitAuthFlows", []) for c in _clients(app))  # type: ignore[operator]
+
+
+@pytest.mark.xfail(
+    strict=True,
+    raises=AssertionError,
+    reason="phase 2: the retired web client is deleted after api/edge stop importing its id (CloudFormation export)",
+)
+def test_only_the_proxy_client_remains(app: cdk.App) -> None:
+    assert [c["ClientName"] for c in _clients(app)] == ["tasklane-dev-proxy"]
 
 
 def test_jwt_authorizer_trusts_only_the_proxy_client(app: cdk.App) -> None:
@@ -36,7 +48,9 @@ def test_jwt_authorizer_trusts_only_the_proxy_client(app: cdk.App) -> None:
 
 
 def test_spa_config_has_no_cognito_ids(app: cdk.App) -> None:
-    edge = next(s for s in app.node.children if isinstance(s, cdk.Stack) and s.stack_name == "tasklane-dev-edge")
+    edge = next(
+        s for s in app.node.children if isinstance(s, cdk.Stack) and s.stack_name == "tasklane-dev-edge"
+    )
     cfg = edge.spa_config  # type: ignore[attr-defined]  # the dict shipped as config.json
     assert set(cfg) == {"apiBase", "authBase", "wsPath", "stage"}
     assert cfg["authBase"] == "/api/auth"

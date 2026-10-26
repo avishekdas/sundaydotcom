@@ -87,11 +87,10 @@ class EdgeStack(cdk.Stack):
                 ),
             },
         )
-        config = {
-            "region": self.region,
-            "userPoolId": identity.pool.user_pool_id,
-            "clientId": identity.client.user_pool_client_id,
+        # The SPA needs no Cognito ids: it signs in through the auth proxy only (07 §7.1).
+        self.spa_config = config = {
             "apiBase": "/api/v1",
+            "authBase": "/api/auth",
             "wsPath": "/ws",
             "stage": stage.name,
         }
