@@ -132,7 +132,7 @@ class ApiStack(cdk.Stack):
             ),
         )
         fn.current_version.grant_invoke(hook)
-        codedeploy.LambdaDeploymentGroup(
+        canary = codedeploy.LambdaDeploymentGroup(
             self,
             "Canary",
             alias=live,
@@ -141,6 +141,9 @@ class ApiStack(cdk.Stack):
             alarms=[canary_alarm],
             auto_rollback=codedeploy.AutoRollbackConfig(failed_deployment=True, deployment_in_alarm=True),
         )
+        # The alias update starts the CodeDeploy deployment; CodeDeploy's right to invoke the hook (the group role's
+        # default policy) must exist first, or the deployment fails with "Internal error occurred" (866ac9f).
+        live.node.add_dependency(canary.role)
         jwt = authz.HttpJwtAuthorizer(
             "Jwt", identity.issuer, jwt_audience=[identity.proxy_client.user_pool_client_id]
         )
