@@ -6,7 +6,7 @@ import hmac
 import json
 import os
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import cache
 from typing import Any
 
@@ -15,6 +15,8 @@ from aws_lambda_powertools.shared.cookies import Cookie, SameSite
 
 from tasklane.collab.realtime import DynamoRegistry, Registry
 from tasklane.identity.auth_proxy import AuthProxy, AuthRefused
+from tasklane.identity.authz import Cap
+from tasklane.identity.snapshot import PermissionSnapshot, SnapshotCache
 from tasklane.identity.viewer_ip import BadViewerAddress, viewer_ip_key
 from tasklane.platform.clock import Clock, SystemClock
 from tasklane.platform.db import Db
@@ -27,6 +29,7 @@ STATUS = {
     "forbidden": 403,
     "not_found": 404,
     "version_conflict": 409,
+    "conflict": 409,
     "gone": 410,
     "rate_limited": 429,
     "stale_epoch": 409,
@@ -43,6 +46,7 @@ class Deps:
     bus_name: str
     auth: AuthProxy | None = None  # auth proxy (07 §7.1); None where sign-in is not served (devserver)
     origin_secret: str | None = None  # CloudFront `x-tl-origin` (07 §7.4, D-050); None disables the check
+    snapshots: SnapshotCache = field(default_factory=SnapshotCache)  # per Lambda instance, ≤ 30 s (07 §7.2)
 
 
 class ApiError(Exception):
@@ -128,75 +132,109 @@ def _int(v: str) -> int:
     return int(v)
 
 
-def current_user() -> dict[str, Any]:
-    """Identity-only JWT (F7.7): resolve the user and the permission epoch from the DB."""
+def reset_permission_cache() -> None:
+    """Forget every cached PermissionSnapshot of the current instance."""
+    if _deps is not None:
+        _deps.snapshots.clear()
+
+
+def _claims() -> dict[str, Any]:
     authorizer = app.current_event.raw_event.get("requestContext", {}).get("authorizer") or {}
-    sub = (authorizer.get("jwt") or {}).get("claims", {}).get("sub")
-    if not sub:
-        raise ApiError("unauthenticated", "Sign in required")
+    return dict((authorizer.get("jwt") or {}).get("claims", {}))
+
+
+def snapshot(*, fresh: bool = False) -> PermissionSnapshot:
+    """Identity-only JWT (F7.7): the user, role and permissions come from the DB, never from token claims."""
+    claims = _claims()
+    sub = claims.get("sub")
     try:
-        uuid.UUID(sub)
+        uuid.UUID(str(sub))
     except ValueError:
         raise ApiError("unauthenticated", "Sign in required") from None
-    rows = deps().db.query(
-        """select u.id::text as id, u.name, u.email::text as email, u.role, (select perm_epoch from tl.account) as epoch
-           from tl.users u where u.cognito_sub = :sub::uuid and u.status = 'active'""",
-        {"sub": sub},
-    )
-    if not rows:
+    snap = deps().snapshots.get(deps().db, deps().clock, str(sub), fresh=fresh)
+    if snap is None:
         raise ApiError("unauthenticated", "Sign in required")
-    return rows[0]
+    try:
+        iat = int(claims.get("iat", 0))
+    except (TypeError, ValueError):
+        iat = 0
+    if iat < snap.tokens_valid_after:  # revoked by reset / sign-out-everywhere / deactivation (AR-9)
+        raise ApiError("unauthenticated", "Session expired; sign in again")
+    return snap
+
+
+def current_user() -> dict[str, Any]:
+    s = snapshot()
+    return {"id": str(s.user_id), "name": s.name, "email": s.email, "role": s.role, "epoch": s.epoch}
+
+
+def _board(board_id: str, cap: Cap, snap: PermissionSnapshot | None = None) -> tuple[int, PermissionSnapshot]:
+    """Authorize before anything else (bodies are validated afterwards): invisible → 404, missing cap → 403."""
+    b = _int(board_id)
+    s = snap or snapshot()
+    caps = s.caps(b)
+    if caps is None:
+        raise ApiError("not_found", "Not found")
+    if cap not in caps:
+        raise ApiError("forbidden", "You do not have permission to do this")
+    return b, s
 
 
 @app.get("/api/v1/me")
 def me() -> dict[str, Any]:
-    u = current_user()
-    return {"id": u["id"], "name": u["name"], "email": u["email"], "role": u["role"]}
+    s = snapshot()
+    return {
+        "id": str(s.user_id),
+        "name": s.name,
+        "email": s.email,
+        "role": s.role,
+        "capabilities": sorted(c.value for c in s.account_caps()),
+    }
 
 
 @app.get("/api/v1/boards/<board_id>/schema")
 def schema(board_id: str) -> dict[str, Any]:
-    current_user()
-    doc = boards.get_schema(deps().db, _int(board_id))
+    b, s = _board(board_id, Cap.READ)
+    doc = boards.get_schema(deps().db, b)
     if doc is None:
         raise ApiError("not_found", "Not found")
-    return doc
+    caps = s.caps(b) or frozenset()
+    return {**doc, "capabilities": sorted(c.value for c in caps)}  # the UI hides what the caller cannot do
 
 
 @app.post("/api/v1/boards/<board_id>/query")
 def query(board_id: str) -> dict[str, Any]:
-    current_user()
-    return boards.query_board(deps().db, _int(board_id))
+    b, _ = _board(board_id, Cap.READ)
+    return boards.query_board(deps().db, b)
 
 
 @app.post("/api/v1/boards/<board_id>/items:fetch")
 def items_fetch(board_id: str) -> dict[str, Any]:
-    current_user()
+    b, _ = _board(board_id, Cap.READ)
     ids = _body().get("ids", [])
     if not isinstance(ids, list) or not all(isinstance(i, str) for i in ids):
         raise ApiError("validation_error", "ids must be a list of strings", {"ids": "list of strings"})
-    return {"items": boards.fetch_items(deps().db, _int(board_id), ids)}
+    return {"items": boards.fetch_items(deps().db, b, ids)}
 
 
 @app.patch("/api/v1/items/<item_id>/values")
 def patch_values(item_id: str) -> dict[str, Any]:
-    u = current_user()
+    item = _int(item_id)
+    board = boards.board_of_item(deps().db, item)
+    if board is None:
+        raise ApiError("not_found", "Not found")
+    _, s = _board(str(board), Cap.EDIT_VALUES)
     body = _body()
     values = body.get("values")
     if not isinstance(values, dict) or not values:
         raise ApiError("validation_error", "values must be a non-empty object", {"values": "required"})
-    mid = body.get("mutation_id") or str(uuid.uuid4())
-    actor = boards.Actor(user_id=int(u["id"]), cached_epoch=int(u["epoch"]))
-    res = boards.set_values(deps().db, actor, _int(item_id), values, mutation_id=str(mid))
-    if res.failure == "stale_epoch":  # re-authorize and retry once (FR-9)
-        fresh = current_user()
-        res = boards.set_values(
-            deps().db,
-            boards.Actor(int(fresh["id"]), int(fresh["epoch"])),
-            _int(item_id),
-            values,
-            mutation_id=str(mid),
-        )
+    mid = str(body.get("mutation_id") or uuid.uuid4())
+    res = boards.set_values(deps().db, boards.Actor(s.user_id, s.epoch), item, values, mutation_id=mid)
+    if (
+        res.failure == "stale_epoch"
+    ):  # permissions changed since the snapshot: re-authorize and retry once (FR-9)
+        _, s = _board(str(board), Cap.EDIT_VALUES, snapshot(fresh=True))
+        res = boards.set_values(deps().db, boards.Actor(s.user_id, s.epoch), item, values, mutation_id=mid)
     if res.failure:
         raise ApiError("not_found" if res.failure == "not_found" else "forbidden", "Cannot update this item")
     try:  # the write is committed; a failed publish is left to the sweeper (outbox), never a 500 (M0B-11)
@@ -208,11 +246,26 @@ def patch_values(item_id: str) -> dict[str, Any]:
 
 @app.post("/api/v1/boards/<board_id>/changes")
 def board_changes(board_id: str) -> dict[str, Any]:
-    current_user()
+    b, _ = _board(board_id, Cap.READ)
     since = _body().get("since_xmin")
     if since is not None and not isinstance(since, str):
         raise ApiError("validation_error", "since_xmin must be a string", {"since_xmin": "string"})
-    return boards.changes(deps().db, _int(board_id), since_xmin=since)
+    return boards.changes(deps().db, b, since_xmin=since)
+
+
+@app.post("/api/v1/boards/<board_id>/columns")
+def create_column(board_id: str) -> Response[str]:
+    b, _ = _board(board_id, Cap.EDIT_STRUCTURE)
+    title = _body().get("title")
+    if not isinstance(title, str):
+        raise ApiError("validation_error", "Invalid request", {"title": "Required"})
+    try:
+        col = boards.create_text_column(deps().db, b, title)
+    except boards.TitleTaken:
+        raise ApiError(
+            "conflict", "A column with this title already exists", {"title": "Already used"}
+        ) from None
+    return Response(status_code=201, content_type=content_types.APPLICATION_JSON, body=json.dumps(col))
 
 
 @app.post("/api/v1/realtime/ticket")

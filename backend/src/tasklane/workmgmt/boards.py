@@ -281,3 +281,38 @@ def changes(db: Db, board_id: int, *, since_xmin: str | None) -> dict[str, Any]:
         "more": more,
         "changes": [{k: r[k] for k in ("item_id", "kind", "columns", "seq")} for r in page],
     }
+
+
+def board_of_item(db: Db, item_id: int) -> int | None:
+    rows = db.query(
+        "select board_id::text as b from tl.items where id = :id and state = 'active'", {"id": item_id}
+    )
+    return int(rows[0]["b"]) if rows else None
+
+
+class TitleTaken(ValueError):
+    pass
+
+
+def create_text_column(db: Db, board_id: int, title: str) -> dict[str, Any]:
+    """Minimal column create (AC-K3-2 needs a structural write in M1); M2's column framework (C40) extends it to
+    every type and setting. Title 1-60 chars, unique per board ignoring case (C40.1); id is immutable."""
+    title = title.strip()
+    if not 1 <= len(title) <= 60:
+        raise ValidationFailed({"title": "1-60 characters"})
+    col_id = f"text_{uuid.uuid4().hex[:8]}"
+    rows = db.query(
+        """with ins as (insert into tl.columns (board_id, id, title, type, settings, position)
+                        select :b, :id, :title, 'text', '{}'::jsonb,
+                               coalesce((select max(position) from tl.columns where board_id = :b), '') || 'n'
+                        on conflict (board_id, lower(title)) where state = 'active' do nothing
+                        returning id, title, type, version),
+                bv as (update tl.boards set version = version + 1
+                       where id = :b and exists (select 1 from ins) returning id)
+           select id, title, type, version::text as version from ins""",
+        {"b": board_id, "id": col_id, "title": title},
+    )
+    if not rows:
+        raise TitleTaken(title)
+    r = rows[0]
+    return {"id": r["id"], "title": r["title"], "type": r["type"], "version": int(r["version"])}

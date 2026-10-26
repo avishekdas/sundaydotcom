@@ -69,3 +69,28 @@ def visible_sql(user_id: int, select: str) -> tuple[str, dict[str, Param]]:
     ctes, params = visibility_ctes(user_id)
     head = ",\n".join(f"{c.name} as ({c.sql})" for c in ctes)
     return f"with {head}\n{select}", params
+
+
+VIS_USER_BY_SUB = Cte(
+    "vis_user",
+    "select u.id, u.role from tl.users u where u.cognito_sub = :vis_sub::uuid and u.status = 'active'",
+)
+
+SNAPSHOT_SELECT = """select json_build_object(
+  'user', (select json_build_object('id', u.id::text, 'name', u.name, 'email', u.email::text, 'role', u.role,
+                                    'tva', extract(epoch from u.tokens_valid_after)::bigint)
+           from tl.users u join vis_user v on v.id = u.id),
+  'epoch', (select perm_epoch from tl.account),
+  'boards', coalesce((select json_agg(json_build_array(b.id::text, root.permission_set,
+                        exists (select 1 from tl.board_members bm
+                                where bm.board_id = root.id and bm.principal_type = 'user'
+                                  and bm.principal_id = (select id from vis_user) and bm.role = 'owner')))
+                      from vis_boards vb join tl.boards b on b.id = vb.id
+                      join tl.boards root on root.id = coalesce(b.parent_board_id, b.id)), '[]'))::text as doc"""
+
+
+def snapshot_sql(cognito_sub: str) -> tuple[str, dict[str, Param]]:
+    """One statement for the PermissionSnapshot (07 §7.2): the user (by token `sub`), the global permission epoch
+    and every board they can see with its permission set and their ownership — built on the same ``vis_boards``."""
+    head = ",\n".join(f"{c.name} as ({c.sql})" for c in (VIS_USER_BY_SUB, VIS_BOARDS))
+    return f"with {head}\n{SNAPSHOT_SELECT}", {"vis_sub": cognito_sub}

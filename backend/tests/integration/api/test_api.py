@@ -69,7 +69,13 @@ def test_unauthenticated_and_unknown_users_get_401(deps: Deps) -> None:
 def test_me(deps: Deps) -> None:
     assert call(deps, "GET", "/api/v1/me") == (
         200,
-        {"id": "42", "name": "Ada", "email": "a@example.com", "role": "admin"},
+        {
+            "id": "42",
+            "name": "Ada",
+            "email": "a@example.com",
+            "role": "admin",
+            "capabilities": ["create_board", "create_workspace", "export", "invite", "manage_account"],
+        },
     )
 
 
