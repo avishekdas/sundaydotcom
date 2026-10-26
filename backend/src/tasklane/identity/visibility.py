@@ -84,9 +84,18 @@ SNAPSHOT_SELECT = """select json_build_object(
   'boards', coalesce((select json_agg(json_build_array(b.id::text, root.permission_set,
                         exists (select 1 from tl.board_members bm
                                 where bm.board_id = root.id and bm.principal_type = 'user'
-                                  and bm.principal_id = (select id from vis_user) and bm.role = 'owner')))
+                                  and bm.principal_id = vu.id and bm.role = 'owner'),
+                        -- visible only through the Admin override (K1.1): audited when opened (AC-K1-2)
+                        vu.role = 'admin' and not (
+                          exists (select 1 from tl.board_members bm
+                                  where bm.board_id = root.id and bm.principal_type = 'user' and bm.principal_id = vu.id)
+                          or (root.kind = 'main' and (w.kind = 'open'
+                              or exists (select 1 from tl.workspace_members wm
+                                         where wm.workspace_id = w.id and wm.user_id = vu.id))))))
                       from vis_boards vb join tl.boards b on b.id = vb.id
-                      join tl.boards root on root.id = coalesce(b.parent_board_id, b.id)), '[]'))::text as doc"""
+                      join tl.boards root on root.id = coalesce(b.parent_board_id, b.id)
+                      join tl.workspaces w on w.id = root.workspace_id
+                      cross join vis_user vu), '[]'))::text as doc"""
 
 
 def snapshot_sql(cognito_sub: str) -> tuple[str, dict[str, Param]]:

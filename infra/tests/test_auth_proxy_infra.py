@@ -61,7 +61,7 @@ def _api_fn(t):  # type: ignore[no-untyped-def]
 def test_api_lambda_gets_proxy_env_and_only_the_cognito_actions_it_uses(app: cdk.App) -> None:
     t = template(app, "tasklane-dev-api")
     env = _api_fn(t)["Properties"]["Environment"]["Variables"]
-    for k in ("USER_POOL_ID", "COGNITO_CLIENT_ID", "COUNTERS_TABLE", "ORIGIN_SECRET"):
+    for k in ("USER_POOL_ID", "COGNITO_CLIENT_ID", "COUNTERS_TABLE", "ORIGIN_SECRET", "AUDIT_SECRET_ARN"):
         assert k in env
     actions: set[str] = set()
     for pol in t.find_resources("AWS::IAM::Policy").values():

@@ -3,6 +3,7 @@ import type { ServerItem } from "./sync/types";
 import type { AppConfig } from "./config";
 import type { NavTree } from "./ui/LeftNav";
 import type { AdminUser, Role } from "./ui/UsersAdmin";
+import type { Settings } from "./ui/AccountSettings";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly fields?: Record<string, string>) {
@@ -31,6 +32,9 @@ export class Api implements BoardApi {
     return this.call<{ id: string; name: string; email: string; role: string; capabilities: string[] }>("GET", "/me");
   }
   nav() { return this.call<NavTree>("GET", "/nav"); }
+  account() { return this.call<Pick<Settings, "name" | "timezone" | "date_format" | "week_start">>("GET", "/account"); }
+  getSettings() { return this.call<Settings>("GET", "/account/settings"); }
+  saveSettings(patch: Partial<Settings>) { return this.call<Settings>("PATCH", "/account/settings", patch); }
   async listUsers() { return (await this.call<{ users: AdminUser[] }>("GET", "/users")).users; }
   inviteUser(email: string, name: string, role: Role) {
     return this.call<AdminUser>("POST", "/users", { email, name, role });

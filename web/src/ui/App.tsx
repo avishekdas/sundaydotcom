@@ -5,6 +5,7 @@ import { loadConfig, type AppConfig } from "../config";
 import { BoardView } from "./BoardView";
 import { LeftNav } from "./LeftNav";
 import { UsersAdmin } from "./UsersAdmin";
+import { AccountSettings } from "./AccountSettings";
 
 const DEFAULT_BOARD = "10";
 
@@ -65,23 +66,34 @@ function Shell({ cfg, token, onSignOut }: { cfg: AppConfig; token: () => Promise
   const [api] = useState(() => new Api(cfg, token));
   const [boardId, setBoardId] = useState(() => new URLSearchParams(location.search).get("board") ?? DEFAULT_BOARD);
   const [caps, setCaps] = useState<string[]>([]);
-  const [page, setPage] = useState<"board" | "users">(() => (new URLSearchParams(location.search).get("page") === "users" ? "users" : "board"));
+  const [page, setPage] = useState<"board" | "users" | "settings">(() => {
+    const p = new URLSearchParams(location.search).get("page");
+    return p === "users" || p === "settings" ? p : "board";
+  });
+  const [accountName, setAccountName] = useState("Tasklane");
   useEffect(() => { api.me().then((m) => setCaps(m.capabilities ?? [])).catch(() => setCaps([])); }, [api]);
+  useEffect(() => { api.account().then((a) => setAccountName(a.name)).catch(() => {}); }, [api]);
+  const go = (p: "users" | "settings") => { history.pushState(null, "", `?page=${p}`); setPage(p); };
   const open = (id: string) => { history.pushState(null, "", `?board=${id}`); setBoardId(id); setPage("board"); };
   return (
     <div className="shell">
       <header className="topbar">
-        <span className="brand">Tasklane</span>
+        <span className="brand" data-testid="account-name-bar">{accountName}</span>
         <span className="stage">{cfg.stage}</span>
         {caps.includes("manage_account") && (
-          <button className="link" data-testid="nav-users" onClick={() => { history.pushState(null, "", "?page=users"); setPage("users"); }}>Users</button>
+          <>
+            <button className="link" data-testid="nav-users" onClick={() => go("users")}>Users</button>
+            <button className="link admin-link" data-testid="nav-settings" onClick={() => go("settings")}>Settings</button>
+          </>
         )}
         <button className="link" data-testid="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
       <div className="body">
         <LeftNav api={api} canCreateWorkspace={caps.includes("create_workspace")} onOpenBoard={open} currentBoard={boardId} />
         <main className="content">
-          {page === "users" ? <UsersAdmin api={api} /> : <BoardView key={boardId} api={api} boardId={boardId} stage={cfg.stage} />}
+          {page === "users" ? <UsersAdmin api={api} />
+            : page === "settings" ? <AccountSettings api={api} onSaved={(s) => setAccountName(s.name)} />
+            : <BoardView key={boardId} api={api} boardId={boardId} stage={cfg.stage} />}
         </main>
       </div>
     </div>

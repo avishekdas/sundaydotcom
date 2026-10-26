@@ -14,7 +14,7 @@ from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, Response
 from aws_lambda_powertools.shared.cookies import Cookie, SameSite
 
 from tasklane.collab.realtime import DynamoRegistry, Registry
-from tasklane.identity import users
+from tasklane.identity import account, audit, users
 from tasklane.identity.auth_backend import NewPasswordRequired
 from tasklane.identity.auth_proxy import AuthProxy, AuthRefused
 from tasklane.identity.authz import AccountCap, Cap
@@ -50,10 +50,12 @@ class Deps:
     bus_name: str
     auth: AuthProxy | None = None  # auth proxy (07 §7.1); None where sign-in is not served (devserver)
     origin_secret: str | None = None  # CloudFront `x-tl-origin` (07 §7.4, D-050); None disables the check
+    # PermissionSnapshots of this Lambda instance, each reused for ≤ 30 s (07 §7.2)
     snapshots: SnapshotCache = field(default_factory=SnapshotCache)
-    idp: IdentityProvider | None = (
-        None  # admin side of Cognito (invites, deactivation)  # per Lambda instance, ≤ 30 s (07 §7.2)
-    )
+    # admin side of Cognito (invites, deactivation)
+    idp: IdentityProvider | None = None
+    # tl_audit_writer connection (07 §7.3, D-056); None → ``db`` (local dev)
+    audit_db: Db | None = None
 
 
 class ApiError(Exception):
@@ -127,6 +129,11 @@ def _ws_gone(_e: workspaces.Gone) -> Response[str]:
 
 @app.exception_handler(workspaces.Invalid)  # type: ignore[untyped-decorator]
 def _ws_invalid(e: workspaces.Invalid) -> Response[str]:
+    return _error("validation_error", "Invalid request", e.fields)
+
+
+@app.exception_handler(account.Invalid)  # type: ignore[untyped-decorator]
+def _account_invalid(e: account.Invalid) -> Response[str]:
     return _error("validation_error", "Invalid request", e.fields)
 
 
@@ -227,6 +234,23 @@ def _board(board_id: str, cap: Cap, snap: PermissionSnapshot | None = None) -> t
     return b, s
 
 
+def _audit(kind: str, *, actor_id: int | None, target: dict[str, Any] | None = None) -> None:
+    """Append a P1 security event (A15.5) with the viewer IP and user agent of this request."""
+    try:
+        ip: str | None = viewer_ip_key(app.current_event.headers.get("cloudfront-viewer-address"))
+    except BadViewerAddress:
+        ip = None
+    d = deps()
+    audit.record(
+        d.audit_db or d.db,
+        kind,
+        actor_id=actor_id,
+        target=target,
+        ip=ip,
+        user_agent=app.current_event.headers.get("user-agent"),
+    )
+
+
 @app.get("/api/v1/me")
 def me() -> dict[str, Any]:
     s = snapshot()
@@ -242,6 +266,8 @@ def me() -> dict[str, Any]:
 @app.get("/api/v1/boards/<board_id>/schema")
 def schema(board_id: str) -> dict[str, Any]:
     b, s = _board(board_id, Cap.READ)
+    if s.boards[b].admin_override:  # opening a board only an Admin override makes visible (K1.1, AC-K1-2)
+        _audit("admin.override_access", actor_id=s.user_id, target={"board_id": str(b)})
     doc = boards.get_schema(deps().db, b)
     if doc is None:
         raise ApiError("not_found", "Not found")
@@ -346,13 +372,39 @@ def list_users() -> dict[str, Any]:
 @app.post("/api/v1/users")
 def invite_user() -> Response[str]:
     idp = _admin()
-    return _json(201, users.invite(deps().db, idp, _body()))
+    user = users.invite(deps().db, idp, _body())
+    _audit("user.invited", actor_id=snapshot().user_id, target={"email": user["email"], "role": user["role"]})
+    return _json(201, user)
 
 
 @app.patch("/api/v1/users/<user_id>")
 def update_user(user_id: str) -> dict[str, Any]:
     idp = _admin()
-    return users.update(deps().db, idp, _int(user_id), _body())
+    user, changes = users.update(deps().db, idp, _int(user_id), _body())
+    for kind, target in changes:
+        _audit(kind, actor_id=snapshot().user_id, target=target)
+    return user
+
+
+@app.get("/api/v1/account")
+def get_account() -> dict[str, Any]:
+    snapshot()
+    return account.display(deps().db)
+
+
+@app.get("/api/v1/account/settings")
+def get_account_settings() -> dict[str, Any]:
+    _admin()
+    return account.settings(deps().db)
+
+
+@app.patch("/api/v1/account/settings")
+def update_account_settings() -> dict[str, Any]:
+    _admin()
+    after, changes = account.update(deps().db, _body())
+    if changes:
+        _audit("account.settings_changed", actor_id=snapshot().user_id, target={"changes": changes})
+    return after
 
 
 @app.delete("/api/v1/users/<user_id>")
@@ -485,6 +537,13 @@ def auth_sign_in() -> Response[str]:
     assert isinstance(email, str) and isinstance(password, str)
     try:
         t = _auth().sign_in(email, password, _viewer_ip())
+    except AuthRefused as refused:
+        _audit(
+            "auth.sign_in_failed",
+            actor_id=None,
+            target={"email": email.strip().lower(), "code": refused.code},
+        )
+        raise
     except NewPasswordRequired as challenge:  # invitee's first sign-in (F1.2): no session yet
         return _json(200, {"challenge": "new_password_required", "session": challenge.session})
     return _session_response(t)
@@ -553,6 +612,7 @@ def _bump_tokens_valid_after(email: str) -> None:
 def auth_reset() -> Response[str]:
     email, code, new_password = _required(_body(), "email", "code", "new_password")
     _auth().reset(email, code.strip(), new_password, _viewer_ip(), on_reset=_bump_tokens_valid_after)
+    _audit("auth.password_reset", actor_id=None, target={"email": email.strip().lower()})
     return Response(status_code=204, body="", cookies=[_refresh_cookie("", 0)])
 
 
@@ -560,6 +620,7 @@ def auth_reset() -> Response[str]:
 def sign_out_everywhere() -> dict[str, Any]:
     u = current_user()
     _auth().sign_out_everywhere(u["email"])
+    _audit("auth.sign_out_everywhere", actor_id=int(u["id"]))
     return {"signed_out": True}
 
 
@@ -609,6 +670,7 @@ def _env_deps() -> Deps:
         auth=auth,
         origin_secret=os.environ["ORIGIN_SECRET"],
         idp=idp,
+        audit_db=db_from_env(secret_env="AUDIT_SECRET_ARN"),  # noqa: S106 — env var name
     )
 
 

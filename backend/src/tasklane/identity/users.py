@@ -10,6 +10,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from tasklane.identity.account import allowed_domains
 from tasklane.identity.idp import IdentityProvider, UserExists
 from tasklane.platform.db import Db
 
@@ -66,6 +67,9 @@ def invite(db: Db, idp: IdentityProvider, body: dict[str, Any]) -> dict[str, Any
         errors["name"] = "1-120 characters"
     if role not in ROLES:
         errors["role"] = "admin, member or viewer"
+    domains = allowed_domains(db)
+    if "email" not in errors and domains and email.rsplit("@", 1)[1] not in domains:
+        errors["email"] = "Invites are limited to: " + ", ".join(domains)  # A1.2, AC-A1-3
     if errors:
         raise Invalid(errors)
     if db.query("select 1 as x from tl.users where email = :e", {"e": email}):
@@ -106,8 +110,14 @@ def _active_admins_other_than(db: Db, user_id: int) -> int:
     return int(rows[0]["n"])
 
 
-def update(db: Db, idp: IdentityProvider, user_id: int, body: dict[str, Any]) -> dict[str, Any]:
+Change = tuple[str, dict[str, Any]]  # (audit kind, target)
+
+
+def update(
+    db: Db, idp: IdentityProvider, user_id: int, body: dict[str, Any]
+) -> tuple[dict[str, Any], list[Change]]:
     user = _get(db, user_id)
+    changes: list[Change] = []
     role, status = body.get("role"), body.get("status")
     errors: dict[str, str] = {}
     if role is not None and role not in ROLES:
@@ -133,17 +143,20 @@ def update(db: Db, idp: IdentityProvider, user_id: int, body: dict[str, Any]) ->
             "updated_at = now() where id = :id",
             {"id": user_id},
         )
+        changes.append(("user.deactivated", {"user_id": str(user_id)}))
     elif status == "active" and user["status"] == "deactivated":
         idp.enable(user["email"])
         db.execute(
             "update tl.users set status = 'active', updated_at = now() where id = :id", {"id": user_id}
         )
+        changes.append(("user.reactivated", {"user_id": str(user_id)}))
     if role is not None and role != user["role"]:
         db.execute(
             "update tl.users set role = :r, updated_at = now() where id = :id", {"r": role, "id": user_id}
         )
+        changes.append(("user.role_changed", {"user_id": str(user_id), "from": user["role"], "to": role}))
     _bump_epoch(db)
-    return _get(db, user_id)
+    return _get(db, user_id), changes
 
 
 def activate_invitee(db: Db, email: str) -> None:

@@ -20,6 +20,7 @@ TTL = timedelta(seconds=30)
 class BoardAccess:
     permission_set: str
     is_owner: bool
+    admin_override: bool = False  # visible only because the caller is an Admin (K1.1, audited)
 
 
 @dataclass(frozen=True)
@@ -56,7 +57,10 @@ def load_snapshot(db: Db, cognito_sub: str) -> PermissionSnapshot | None:
         role=u["role"],
         tokens_valid_after=int(u["tva"]),
         epoch=int(doc["epoch"]),
-        boards={int(b): BoardAccess(pset, bool(owner)) for b, pset, owner in doc["boards"]},
+        boards={
+            int(b): BoardAccess(pset, bool(owner), bool(override))
+            for b, pset, owner, override in doc["boards"]
+        },
     )
 
 

@@ -14,10 +14,14 @@ def boto(name: str) -> Any:
     return boto3.client(name)
 
 
-def db_from_env(rds_client: Any = None) -> DataApiDb:
+def db_from_env(
+    rds_client: Any = None,
+    *,
+    secret_env: str = "DB_SECRET_ARN",  # noqa: S107 — the name of an env var, not a secret
+) -> DataApiDb:
     return DataApiDb(
         rds_client or boto("rds-data"),
         resource_arn=os.environ["CLUSTER_ARN"],
-        secret_arn=os.environ["DB_SECRET_ARN"],
+        secret_arn=os.environ[secret_env],
         database=os.environ.get("DB_NAME", "tasklane"),
     )

@@ -63,8 +63,10 @@ class ApiStack(cdk.Stack):
                 "COGNITO_CLIENT_ID": identity.proxy_client.user_pool_client_id,
                 "COUNTERS_TABLE": counters.table_name,
                 "ORIGIN_SECRET": identity.origin_secret_ref,
+                "AUDIT_SECRET_ARN": data.role_secrets["tl_audit_writer"].secret_arn,  # D-056
             },
         )
+        data.role_secrets["tl_audit_writer"].grant_read(fn)
         counters.grant_read_write_data(fn)
         # Auth proxy inside the api λ (D-051, a recorded deviation from SEC-11): only the Cognito actions it uses,
         # on this pool only. RevokeToken needs no IAM permission (it takes the client id).
