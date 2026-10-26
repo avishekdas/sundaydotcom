@@ -105,4 +105,4 @@ M0B-1 and M0B-2 are small code and config changes with tests. M0B-3 is a test re
 | M0B-11 | **Fixed.** Publish failure after commit is logged (`outbox.publish_error`) and the write still returns 200; the sweeper republishes. |
 | M0B-15 | **Fixed.** Data API resume budget 1+2+4+8 s (≤ 20 s) inside the 29 s api timeout; auto-pause resume latency to be measured on the next cold morning start (M0A-9 stays open as a measurement). |
 | M0B-5, 6, 10, 12, 14, 16, 17 | Carried into M1 by name (plan M1 "Carried from the M0b review"). |
-| M0B-13 | Tier B run for the final head is linked in the plan status after this commit's pipeline. |
+| M0B-13 | **Fixed.** Final head 0092c73: ci 40248252924, deploy-dev 40248331048 (incl. fail-closed data gate), e2e-dev (Tier B) **40249155724 green**. |
