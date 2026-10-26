@@ -124,3 +124,14 @@ def test_api_canary_runs_a_pre_traffic_smoke_test(app: cdk.App) -> None:
     env = hook_fn["Properties"]["Environment"]["Variables"]
     assert {"TARGET_VERSION_ARN", "ORIGIN_SECRET"} <= set(env)
     assert hook_fn["Properties"]["Handler"] == "tasklane.workers.predeploy_hook.handler"
+
+
+def test_alias_update_waits_for_the_codedeploy_role_policy(app: cdk.App) -> None:
+    """866ac9f deploy: the alias update started the CodeDeploy deployment while the policy letting CodeDeploy invoke
+    the pre-traffic hook was still being created → "Internal error occurred" and a rollback."""
+    t = template(app, "tasklane-dev-api")
+    alias = next(iter(t.find_resources("AWS::Lambda::Alias").values()))
+    policies = [
+        k for k in t.find_resources("AWS::IAM::Policy") if k.startswith("CanaryServiceRoleDefaultPolicy")
+    ]
+    assert policies and set(policies) <= set(alias.get("DependsOn", []))
