@@ -190,11 +190,14 @@ ADMIN_ROUTES = {  # account administration (K1: Admin only); behaviour in identi
     ("PATCH", "/api/v1/users/<user_id>"),
     ("DELETE", "/api/v1/users/<user_id>"),
     ("POST", "/api/v1/users/<user_id>/resend-invite"),
+    ("GET", "/api/v1/account/settings"),
+    ("PATCH", "/api/v1/account/settings"),
 }
 SELF_ROUTES = {  # any active user, about themselves
     ("GET", "/api/v1/me"),
     ("POST", "/api/v1/realtime/ticket"),
     ("POST", "/api/v1/me/sign-out-everywhere"),
+    ("GET", "/api/v1/account"),  # display settings for the top bar (A1.3)
 }
 WORLD = {  # board id → (item on it, permission set, kind, owners)
     10: (1001, "edit_everything", "main", set()),

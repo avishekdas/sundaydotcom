@@ -40,6 +40,7 @@ READ_ROUTES = {
     ("POST", "/api/v1/me/sign-out-everywhere"),  # self-service on the caller's own sessions (D-052)
     ("GET", "/api/v1/nav"),
     ("GET", "/api/v1/workspaces/<workspace_id>"),
+    ("GET", "/api/v1/account"),
 }
 # Unauthenticated auth-proxy routes (07 §7.1) sit outside the JWT authorizer and outside this check.
 PUBLIC_PREFIX = "/api/auth/"
@@ -54,6 +55,7 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/api/v1/boards/<board_id>/move"): {"before_id": None},
     ("POST", "/api/v1/users"): {"email": "viewer-invite@example.com", "name": "V", "role": "member"},
     ("PATCH", "/api/v1/users/<user_id>"): {"role": "member"},
+    ("PATCH", "/api/v1/account/settings"): {"name": "Viewer Inc"},
 }
 
 

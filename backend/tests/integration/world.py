@@ -45,6 +45,7 @@ def make_deps(uri: str) -> Deps:
     clock = FakeClock(NOW)
     return Deps(
         db=StrictDataApiFake(uri),
+        audit_db=StrictDataApiFake(uri),
         publisher=_NoPublish(),
         registry=InMemoryRegistry(clock),
         clock=clock,

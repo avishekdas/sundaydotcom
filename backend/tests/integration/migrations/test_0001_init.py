@@ -113,7 +113,10 @@ def test_api_rw_has_dml_but_no_ddl_and_audit_is_append_only(db_uri: str) -> None
     with as_role(db_uri, "tl_api_rw") as c:
         seed(c)
         c.execute("update tl.boards set name = 'B2' where id = 1")
-        c.execute("insert into tl.audit_events (kind) values ('sign_in')")
+        with pytest.raises(
+            errors.InsufficientPrivilege
+        ):  # 0006: only tl_audit_writer appends (07 §7.3, D-056)
+            c.execute("insert into tl.audit_events (kind) values ('sign_in')")
         with pytest.raises(errors.InsufficientPrivilege):
             c.execute("update tl.audit_events set kind = 'x'")
         with pytest.raises(errors.InsufficientPrivilege):
