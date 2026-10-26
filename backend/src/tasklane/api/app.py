@@ -14,7 +14,7 @@ from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, Response
 from aws_lambda_powertools.shared.cookies import Cookie, SameSite
 
 from tasklane.collab.realtime import DynamoRegistry, Registry
-from tasklane.identity import account, audit, users
+from tasklane.identity import account, audit, profile, users
 from tasklane.identity.auth_backend import NewPasswordRequired
 from tasklane.identity.auth_proxy import AuthProxy, AuthRefused
 from tasklane.identity.authz import AccountCap, Cap
@@ -24,7 +24,7 @@ from tasklane.identity.viewer_ip import BadViewerAddress, viewer_ip_key
 from tasklane.platform.clock import Clock, SystemClock
 from tasklane.platform.db import Db
 from tasklane.platform.outbox import EventBridgePublisher, Publisher, publish_after_commit
-from tasklane.workmgmt import boards, workspaces
+from tasklane.workmgmt import board_access, boards, workspaces
 
 STATUS = {
     "validation_error": 400,
@@ -254,13 +254,40 @@ def _audit(kind: str, *, actor_id: int | None, target: dict[str, Any] | None = N
 @app.get("/api/v1/me")
 def me() -> dict[str, Any]:
     s = snapshot()
-    return {
-        "id": str(s.user_id),
-        "name": s.name,
-        "email": s.email,
-        "role": s.role,
-        "capabilities": sorted(c.value for c in s.account_caps()),
-    }
+    return {**profile.get(deps().db, s.user_id), "capabilities": sorted(c.value for c in s.account_caps())}
+
+
+@app.patch("/api/v1/me")
+def update_me() -> dict[str, Any]:
+    s = snapshot()
+    doc = profile.update(deps().db, s.user_id, _body())
+    return {**doc, "capabilities": sorted(c.value for c in s.account_caps())}
+
+
+@app.get("/api/v1/boards/<board_id>")
+def get_board(board_id: str) -> dict[str, Any]:
+    return board_access.get(deps().db, snapshot(), _int(board_id))
+
+
+@app.patch("/api/v1/boards/<board_id>")
+def update_board(board_id: str) -> dict[str, Any]:
+    doc = board_access.update(deps().db, snapshot(), _int(board_id), _body())
+    _permissions_changed()
+    return doc
+
+
+@app.put("/api/v1/boards/<board_id>/members/<user_id>")
+def put_board_member(board_id: str, user_id: str) -> dict[str, Any]:
+    doc = board_access.put_member(deps().db, snapshot(), _int(board_id), _int(user_id), _body().get("role"))
+    _permissions_changed()
+    return doc
+
+
+@app.delete("/api/v1/boards/<board_id>/members/<user_id>")
+def delete_board_member(board_id: str, user_id: str) -> Response[str]:
+    board_access.remove_member(deps().db, snapshot(), _int(board_id), _int(user_id))
+    _permissions_changed()
+    return Response(status_code=204, body="")
 
 
 @app.get("/api/v1/boards/<board_id>/schema")
@@ -354,9 +381,18 @@ def _json(status: int, doc: Any) -> Response[str]:
 # --- users, invites and roles (F1, F2, K1): Admin only ------------------------------------------------------------
 
 
-def _admin() -> IdentityProvider:
+def _require_admin() -> None:
     if AccountCap.MANAGE_ACCOUNT not in snapshot().account_caps():
         raise ApiError("forbidden", "You do not have permission to do this")
+
+
+def _permissions_changed() -> None:
+    """This instance re-loads snapshots at once; other instances follow within ≤ 30 s via the epoch (F7.7)."""
+    deps().snapshots.clear()
+
+
+def _admin() -> IdentityProvider:
+    _require_admin()
     idp = deps().idp
     if idp is None:
         raise ApiError("not_found", "Not found")
@@ -365,7 +401,7 @@ def _admin() -> IdentityProvider:
 
 @app.get("/api/v1/users")
 def list_users() -> dict[str, Any]:
-    _admin()
+    _require_admin()
     return {"users": users.list_users(deps().db)}
 
 
@@ -381,6 +417,7 @@ def invite_user() -> Response[str]:
 def update_user(user_id: str) -> dict[str, Any]:
     idp = _admin()
     user, changes = users.update(deps().db, idp, _int(user_id), _body())
+    _permissions_changed()
     for kind, target in changes:
         _audit(kind, actor_id=snapshot().user_id, target=target)
     return user
@@ -394,13 +431,13 @@ def get_account() -> dict[str, Any]:
 
 @app.get("/api/v1/account/settings")
 def get_account_settings() -> dict[str, Any]:
-    _admin()
+    _require_admin()
     return account.settings(deps().db)
 
 
 @app.patch("/api/v1/account/settings")
 def update_account_settings() -> dict[str, Any]:
-    _admin()
+    _require_admin()
     after, changes = account.update(deps().db, _body())
     if changes:
         _audit("account.settings_changed", actor_id=snapshot().user_id, target={"changes": changes})
@@ -445,30 +482,37 @@ def get_workspace(workspace_id: str) -> dict[str, Any]:
 def update_workspace(workspace_id: str) -> dict[str, Any]:
     uid, ws = snapshot().user_id, _int(workspace_id)
     workspaces.get(deps().db, uid, ws)  # visibility first, then ownership, then the body
-    return workspaces.update(deps().db, uid, ws, _body())
+    doc = workspaces.update(deps().db, uid, ws, _body())
+    _permissions_changed()
+    return doc
 
 
 @app.delete("/api/v1/workspaces/<workspace_id>")
 def delete_workspace(workspace_id: str) -> Response[str]:
     workspaces.delete(deps().db, snapshot().user_id, _int(workspace_id))
+    _permissions_changed()
     return Response(status_code=204, body="")
 
 
 @app.post("/api/v1/workspaces/<workspace_id>/restore")
 def restore_workspace(workspace_id: str) -> dict[str, Any]:
-    return workspaces.restore(deps().db, snapshot().user_id, _int(workspace_id))
+    doc = workspaces.restore(deps().db, snapshot().user_id, _int(workspace_id))
+    _permissions_changed()
+    return doc
 
 
 @app.put("/api/v1/workspaces/<workspace_id>/members/<user_id>")
 def put_workspace_member(workspace_id: str, user_id: str) -> dict[str, Any]:
     uid, ws = snapshot().user_id, _int(workspace_id)
     workspaces.put_member(deps().db, uid, ws, _int(user_id), _body().get("role"))
+    _permissions_changed()
     return workspaces.get(deps().db, uid, ws)
 
 
 @app.delete("/api/v1/workspaces/<workspace_id>/members/<user_id>")
 def delete_workspace_member(workspace_id: str, user_id: str) -> Response[str]:
     workspaces.remove_member(deps().db, snapshot().user_id, _int(workspace_id), _int(user_id))
+    _permissions_changed()
     return Response(status_code=204, body="")
 
 

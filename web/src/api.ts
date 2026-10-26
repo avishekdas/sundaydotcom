@@ -4,6 +4,8 @@ import type { AppConfig } from "./config";
 import type { NavTree } from "./ui/LeftNav";
 import type { AdminUser, Role } from "./ui/UsersAdmin";
 import type { Settings } from "./ui/AccountSettings";
+import type { Me } from "./ui/Profile";
+import type { BoardInfo } from "./ui/BoardAccess";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly fields?: Record<string, string>) {
@@ -28,9 +30,16 @@ export class Api implements BoardApi {
     return data as T;
   }
 
-  me() {
-    return this.call<{ id: string; name: string; email: string; role: string; capabilities: string[] }>("GET", "/me");
+  me() { return this.call<Me>("GET", "/me"); }
+  updateMe(patch: Partial<Me>) { return this.call<Me>("PATCH", "/me", patch); }
+  board(id: string) { return this.call<BoardInfo>("GET", `/boards/${id}`); }
+  updateBoard(id: string, patch: Partial<Pick<BoardInfo, "kind" | "permission_set">>) {
+    return this.call<BoardInfo>("PATCH", `/boards/${id}`, patch);
   }
+  putBoardMember(id: string, userId: string, role: "owner" | "member") {
+    return this.call<BoardInfo>("PUT", `/boards/${id}/members/${userId}`, { role });
+  }
+  async removeBoardMember(id: string, userId: string) { await this.call<unknown>("DELETE", `/boards/${id}/members/${userId}`); }
   nav() { return this.call<NavTree>("GET", "/nav"); }
   account() { return this.call<Pick<Settings, "name" | "timezone" | "date_format" | "week_start">>("GET", "/account"); }
   getSettings() { return this.call<Settings>("GET", "/account/settings"); }

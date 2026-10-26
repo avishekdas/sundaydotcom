@@ -40,7 +40,7 @@ def display(db: Db) -> dict[str, Any]:
     return {k: s[k] for k in ("name", "timezone", "date_format", "week_start")}
 
 
-def _valid_tz(tz: Any) -> bool:
+def valid_timezone(tz: Any) -> bool:
     if not isinstance(tz, str) or not tz or ("/" not in tz and tz != "UTC"):
         return False
     try:
@@ -61,7 +61,7 @@ def update(db: Db, body: dict[str, Any]) -> tuple[dict[str, Any], dict[str, dict
         else:
             out["name"] = name.strip()
     if "timezone" in body:
-        if not _valid_tz(body["timezone"]):
+        if not valid_timezone(body["timezone"]):
             errors["timezone"] = "an IANA timezone such as America/New_York"
         else:
             out["timezone"] = body["timezone"]
