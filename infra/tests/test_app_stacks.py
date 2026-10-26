@@ -31,11 +31,6 @@ def test_no_browser_facing_password_client(app: cdk.App) -> None:
     assert all("ALLOW_USER_PASSWORD_AUTH" not in c.get("ExplicitAuthFlows", []) for c in _clients(app))  # type: ignore[operator]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    raises=AssertionError,
-    reason="phase 2: the retired web client is deleted after api/edge stop importing its id (CloudFormation export)",
-)
 def test_only_the_proxy_client_remains(app: cdk.App) -> None:
     assert [c["ClientName"] for c in _clients(app)] == ["tasklane-dev-proxy"]
 
@@ -140,8 +135,6 @@ def test_test_hooks_are_never_enabled_in_prod() -> (
     None
 ):  # plan M0b-8: fake clock / fault injection absent from prod
     import dataclasses
-
-    import pytest
 
     from tasklane_infra.app_builder import build
     from tasklane_infra.config import DEV

@@ -51,16 +51,6 @@ class IdentityStack(cdk.Stack):
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
             removal_policy=cdk.RemovalPolicy.RETAIN,
         )
-        # Retired browser client (phase 1 of 2): no password flow any more (the SPA uses the auth proxy), kept only
-        # because the api/edge stacks imported its id; its export is held until phase 2 deletes both.
-        self.legacy_web_client = self.pool.add_client(
-            "Web",
-            user_pool_client_name=f"tasklane-{stage.name}-web",
-            generate_secret=False,
-            auth_flows=cognito.AuthFlow(),
-            prevent_user_existence_errors=True,
-        )
-        self.export_value(self.legacy_web_client.user_pool_client_id)
         # Auth proxy client (ADR-013): admin password auth from the api λ only; 30-day refresh (D-048), revocable
         # per browser (RevokeToken, D-052).
         self.proxy_client = self.pool.add_client(
