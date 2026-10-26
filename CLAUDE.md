@@ -109,7 +109,7 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
 
 ## Status
 - M0a done; M0b done (review `milestone-reviews/M0b.md`; Tier B run 40249155724).
-- **M1 in progress** (head b7c5768, CI/deploy/Tier B green 2026-10-26):
+- **M1 in progress** (head 3daa63f, CI/deploy/Tier B 40391333302 green 2026-10-26):
   - done: S-2b (`spikes/s2b/REPORT.md`; D-043 retry contract, D-044 interim account closure); north-star
     contract + M1 kickoff (steps `1a.sign_in_create_workspace` Tier B `e2e/m1-sign-in-workspace.spec.ts` and
     `7.viewer_read_only` Tier A — both expected failures); VisibleItems builder + rule-table harness
@@ -125,9 +125,9 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
     (recoverable until 2026-11-02).
   - **sub-story 2 done** (84e5fba; Tier B 40382795487 green incl. `e2e/auth-proxy.spec.ts` through real CloudFront +
     Cognito: origin secret and `CloudFront-Viewer-Address` arrive, cookie set, 6th attempt → 429).
-  - **sub-story 3** (SPA on the proxy): green pushed; **phase 2 still owed** — delete the retired `tasklane-dev-web`
-    client and its `export_value` once api/edge no longer import it (strict xfail `test_only_the_proxy_client_remains`).
-    Learning: CDK cross-stack refs become CloudFormation exports; removing a resource another stack imports needs
+  - **auth slice done**: sub-story 3 SPA on the proxy (f30caa3, Tier B 40385503152), sub-story 4 forgot/reset
+    AC-K7-3 (524196e, D-053) and phase 2 web-client deletion (4e72e4f, Tier B 40387581334; only `tasklane-dev-proxy`
+    left in the pool). Learning: CDK cross-stack refs become CloudFormation exports; removing a resource another stack imports needs
     two deploys (switch consumers, then delete).
   - sub-story 2 decisions: D-050 (origin secret in SSM), D-051 (proxy inside the api λ,
     Cognito actions limited to AdminInitiateAuth + AdminUserGlobalSignOut), D-052 (per-browser sign-out +
