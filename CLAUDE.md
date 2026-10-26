@@ -69,7 +69,9 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
   `tasklane/dev/test-users/*`). Dev URL: CloudFront default domain (D-038), output `Url` of stack
   `tasklane-dev-edge`. Cognito pool `tasklane-dev` (us-east-1_BW2gyuWcc, MFA **OPTIONAL**, SPA client with
   `USER_PASSWORD_AUTH`, RemovalPolicy RETAIN). Test user secret `tasklane/dev/test-users/a` (hand-made, M0B-24).
-  Alerts → SNS email (confirmed).
+  Alerts → SNS email (confirmed). **Dev URL: https://d3qaglpzkbgmho.cloudfront.net**.
+- CloudFront sends IPv6 `CloudFront-Viewer-Address` **without brackets** (`2001:db8::7:443`); GitHub runners are IPv4
+  only, so Tier B cannot catch IPv6 bugs — check with `curl -6` from the Mac after auth changes.
 - Ad-hoc AWS work goes through the AWS MCP `run_script` sandbox: **no classes, no `logging`, no underscore
   attribute names, no async generator expressions**; failing boto calls flood stderr (keep runs small); runs over
   ~1 min become tasks — poll `get_tasks`, and parse large results from the saved file with python/jq.
