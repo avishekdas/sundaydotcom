@@ -45,6 +45,7 @@ PUBLIC_PREFIX = "/api/auth/"
 BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/api/v1/boards/<board_id>/items:fetch"): {"ids": ["1001"]},
     ("PATCH", "/api/v1/items/<item_id>/values"): {"values": {"note": "viewer was here"}},
+    ("POST", "/api/v1/boards/<board_id>/columns"): {"title": "Viewer column"},
 }
 
 
@@ -107,9 +108,6 @@ def _authenticated_routes() -> list[tuple[str, str]]:
 
 
 @pytest.mark.north_star("7.viewer_read_only")
-@pytest.mark.xfail(
-    strict=True, raises=AssertionError, reason="M1 kickoff: permission framework not built yet"
-)
 def test_viewer_reads_every_read_route_and_is_refused_on_every_other(viewer_deps: Deps) -> None:
     got = {(m, p): _call(viewer_deps, m, p, VIEWER_SUB) for m, p in _authenticated_routes()}
     reads_failing = {r: s for r, s in got.items() if r in READ_ROUTES and s != 200}
