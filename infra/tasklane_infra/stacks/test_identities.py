@@ -4,6 +4,7 @@ outsider in Cognito and `tl.users`, credentials in one secret. Built only for st
 from __future__ import annotations
 
 import aws_cdk as cdk
+from aws_cdk import aws_dynamodb as ddb
 from aws_cdk import aws_iam as iam
 from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
@@ -28,6 +29,8 @@ class TestIdentitiesStack(cdk.Stack):
         stage: Stage,
         data: DataStack,
         identity: IdentityStack,
+        counters: ddb.ITable,
+        base_url: str,
         **kw: object,
     ) -> None:
         super().__init__(scope, id, **kw)  # type: ignore[arg-type]
@@ -96,4 +99,30 @@ class TestIdentitiesStack(cdk.Stack):
             service_token=provider.service_token,
             resource_type="Custom::TestIdentities",
             properties={"Users": USERS, "Version": "1"},
+        )
+        # AC-K7-2 on dev (D-046): "IP B" signing in through CloudFront from AWS egress, plus counter cleanup so
+        # e2e-dev can repeat the two-IP check after every deploy.
+        probe = lambda_.Function(
+            self,
+            "IpProbe",
+            function_name=f"tasklane-{stage.name}-ip-probe",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            architecture=lambda_.Architecture.ARM_64,
+            handler="tasklane.workers.ip_probe.handler",
+            code=lambda_.Code.from_asset(backend_asset()),
+            timeout=cdk.Duration.seconds(60),
+            memory_size=256,
+            environment={"STAGE": stage.name, "BASE_URL": base_url, "COUNTERS_TABLE": counters.table_name},
+            log_group=logs.LogGroup(
+                self,
+                "IpProbeLogs",
+                log_group_name=f"/aws/lambda/tasklane-{stage.name}-ip-probe",
+                retention=logs.RetentionDays.ONE_WEEK,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
+        )
+        probe.add_to_role_policy(
+            iam.PolicyStatement(
+                actions=["dynamodb:Scan", "dynamodb:DeleteItem"], resources=[counters.table_arn]
+            )
         )

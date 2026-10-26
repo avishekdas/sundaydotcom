@@ -64,9 +64,15 @@ def test_ip_probe_is_a_dev_only_test_hook(app: cdk.App) -> None:
     t = template(app, "tasklane-dev-test-identities")
     t.has_resource_properties(
         "AWS::Lambda::Function",
-        {"FunctionName": "tasklane-dev-ip-probe", "Handler": "tasklane.workers.ip_probe.handler",
-         "Environment": {"Variables": Match.object_like({"STAGE": "dev", "BASE_URL": Match.any_value(),
-                                                          "COUNTERS_TABLE": Match.any_value()})}},
+        {
+            "FunctionName": "tasklane-dev-ip-probe",
+            "Handler": "tasklane.workers.ip_probe.handler",
+            "Environment": {
+                "Variables": Match.object_like(
+                    {"STAGE": "dev", "BASE_URL": Match.any_value(), "COUNTERS_TABLE": Match.any_value()}
+                )
+            },
+        },
     )
     ddb = set()
     for pol in t.find_resources("AWS::IAM::Policy").values():

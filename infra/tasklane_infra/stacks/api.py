@@ -46,6 +46,7 @@ class ApiStack(cdk.Stack):
             time_to_live_attribute="expires_at",
             removal_policy=cdk.RemovalPolicy.DESTROY,
         )
+        self.counters = counters
         fn = worker_function(
             self,
             "Api",

@@ -94,6 +94,8 @@ def build(app: cdk.App, stage: Stage) -> None:
             stage=stage,
             data=data,
             identity=idn,
+            counters=api.counters,
+            base_url=f"https://{edge.distribution.distribution_domain_name}",
         )
         tid.add_dependency(mig)  # tl.users must exist (the pipeline migrates before code stacks)
         stacks.append(tid)

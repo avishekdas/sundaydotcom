@@ -39,3 +39,5 @@ jobs:
           echo "BASE_URL=$url" >> "$GITHUB_ENV"
       - run: npm ci --no-audit --no-fund && npx playwright install --with-deps chromium
       - run: ../scripts/ci-run.sh npx playwright test
+      - name: AC-K7-2 two-IP check (runner = IP A, ip-probe λ = IP B)
+        run: ../scripts/ci-run.sh ../scripts/ac-k7-2-probe.sh
