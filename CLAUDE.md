@@ -80,6 +80,8 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
   (push works with the Mac's git credentials). Gates locally need `JSII_RUNTIME_PACKAGE_CACHE=disabled` (jsii refuses
   the group-writable `~/Library/Caches`) and a one-off `npm ci` in `web/`. The AWS MCP connector can drop mid-session
   ("connection invalidated" → user reconnects it); the Mac has no AWS profile for account 920824005451.
+- moto: `revoke_token` is not implemented and pools ignore `UsernameConfiguration.CaseSensitive` (CognitoIdp
+  lower-cases emails itself); test revoke on the fake + Tier B.
 - The user prefers questions **one at a time**, each with the context needed to answer (AskUserQuestion has failed in
   desktop sessions — ask in plain text with lettered options, recommendation first).
 - **Data API** (enforced by `StrictDataApiFake`): no array params (sets travel as JSON text); ints arrive as bigint
@@ -115,6 +117,12 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
     (2) auth proxy `/api/auth/*` (07 §7.1 incl. D-043/D-044, SEC-5/SEC-6, refresh cookie 30 d), AC-K7-2 in Tier A via
     injected `CloudFront-Viewer-Address`; (3) SPA on the proxy (direct `USER_PASSWORD_AUTH` removed);
     (4) forgot/reset (Cognito default email) + revocation, AC-K7-3. Two-IP dev probe λ goes into the M1 system test.
+  - **sub-story 1 done** (6055181; Tier B 40380217106 green as the scripted admin). Still open: retire user `a`
+    (deactivate row, disable in Cognito, delete secret `tasklane/dev/test-users/a`) — needs AWS access.
+  - **sub-story 2** (auth proxy backend) decided D-050 (origin secret in SSM), D-051 (proxy inside the api λ,
+    Cognito actions limited to AdminInitiateAuth + AdminUserGlobalSignOut), D-052 (per-browser sign-out +
+    `/api/v1/me/sign-out-everywhere`). Tier B `e2e/auth-proxy.spec.ts` uses a random unknown email per run for the
+    lockout check so no test user is ever locked.
   - then: PermissionSnapshot + perm_epoch + tokens_valid_after, authz caps matrix (AC-K3-4) wired into every
     route via VisibleItems (flips step 7), bootstrap admin, users/invites/deactivate, roles, workspaces & members,
     board kinds & members, permission sets (no edit_assigned), audit events, left nav, profile/timezone;

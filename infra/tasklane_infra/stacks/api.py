@@ -8,7 +8,9 @@ from aws_cdk import aws_apigatewayv2_authorizers as authz
 from aws_cdk import aws_apigatewayv2_integrations as integ
 from aws_cdk import aws_cloudwatch as cw
 from aws_cdk import aws_codedeploy as codedeploy
+from aws_cdk import aws_dynamodb as ddb
 from aws_cdk import aws_lambda as lambda_
+from aws_cdk import aws_logs as logs
 from constructs import Construct
 
 from tasklane_infra.config import Stage
@@ -33,6 +35,16 @@ class ApiStack(cdk.Stack):
         **kw: object,
     ) -> None:
         super().__init__(scope, id, **kw)  # type: ignore[arg-type]
+        # Rate-limit counters (arch 03 §3.8): sign-in per (email, IP) and per account, refresh per IP.
+        counters = ddb.Table(
+            self,
+            "Counters",
+            table_name=f"tasklane-{stage.name}-counters",
+            partition_key=ddb.Attribute(name="pk", type=ddb.AttributeType.STRING),
+            billing_mode=ddb.BillingMode.PAY_PER_REQUEST,
+            time_to_live_attribute="expires_at",
+            removal_policy=cdk.RemovalPolicy.DESTROY,
+        )
         fn = worker_function(
             self,
             "Api",
@@ -47,7 +59,20 @@ class ApiStack(cdk.Stack):
                 "REALTIME_TABLE": realtime.table.table_name,
                 "WS_URL": "/ws",
                 "POWERTOOLS_SERVICE_NAME": "api",
+                "USER_POOL_ID": identity.pool.user_pool_id,
+                "COGNITO_CLIENT_ID": identity.proxy_client.user_pool_client_id,
+                "COUNTERS_TABLE": counters.table_name,
+                "ORIGIN_SECRET": identity.origin_secret_ref,
             },
+        )
+        counters.grant_read_write_data(fn)
+        # Auth proxy inside the api λ (D-051, a recorded deviation from SEC-11): only the Cognito actions it uses,
+        # on this pool only. RevokeToken needs no IAM permission (it takes the client id).
+        fn.add_to_role_policy(
+            cdk.aws_iam.PolicyStatement(
+                actions=["cognito-idp:AdminInitiateAuth", "cognito-idp:AdminUserGlobalSignOut"],
+                resources=[identity.pool.user_pool_arn],
+            )
         )
         fn.add_to_role_policy(
             cdk.aws_iam.PolicyStatement(actions=["events:PutEvents"], resources=[messaging.bus.event_bus_arn])
@@ -91,6 +116,12 @@ class ApiStack(cdk.Stack):
             methods=[apigw.HttpMethod.ANY],
             integration=integ.HttpLambdaIntegration("ApiIntegration", live),
         )
+        self.http_api.add_routes(  # auth proxy: public, protected by the origin secret and its own counters
+            path="/api/auth/{proxy+}",
+            methods=[apigw.HttpMethod.ANY],
+            integration=integ.HttpLambdaIntegration("AuthIntegration", live),
+            authorizer=apigw.HttpNoneAuthorizer(),
+        )
         alarm(
             self,
             "ApiErrors",
@@ -99,6 +130,25 @@ class ApiStack(cdk.Stack):
             comparison=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
             runbook="api",
             summary="api λ errors",
+            topic=messaging.alerts,
+        )
+        closed = logs.MetricFilter(
+            self,
+            "AccountClosedFilter",
+            log_group=fn.log_group,
+            metric_namespace="Tasklane/Auth",
+            metric_name="AccountClosed",
+            filter_pattern=logs.FilterPattern.literal('{ $.metric = "auth.account_closed" }'),
+            metric_value="1",
+        )
+        alarm(
+            self,
+            "AccountClosed",
+            metric=closed.metric(period=cdk.Duration.minutes(5), statistic="Sum"),
+            threshold=0,
+            comparison=cw.ComparisonOperator.GREATER_THAN_THRESHOLD,
+            runbook="auth",
+            summary="Sev2: an account's sign-in was closed after 10 failures in 15 min (D-044)",
             topic=messaging.alerts,
         )
         self.function = fn

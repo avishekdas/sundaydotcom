@@ -99,10 +99,10 @@ def test_account_closed_raises_a_sev2_alarm(app: cdk.App) -> None:
 
 def test_cloudfront_sends_the_origin_secret_to_the_api(app: cdk.App) -> None:
     t = template(app, "tasklane-dev-edge")
-    dist = next(iter(t.find_resources("AWS::CloudFront::Distribution").values()))
-    origins = dist["Properties"]["DistributionConfig"]["Origins"]
-    api = [o for o in origins if "CustomOriginConfig" in o and "execute-api" in str(o["DomainName"])]
-    assert api, "no API origin found"
-    for o in api:
-        names = [h["HeaderName"] for h in o.get("OriginCustomHeaders", [])]
-        assert "x-tl-origin" in names
+    cfg = next(iter(t.find_resources("AWS::CloudFront::Distribution").values()))["Properties"][
+        "DistributionConfig"
+    ]
+    api_origin = next(b["TargetOriginId"] for b in cfg["CacheBehaviors"] if b["PathPattern"] == "/api/*")
+    origin = next(o for o in cfg["Origins"] if o["Id"] == api_origin)
+    headers = {h["HeaderName"]: h["HeaderValue"] for h in origin.get("OriginCustomHeaders", [])}
+    assert "x-tl-origin" in headers and "resolve:ssm:" in str(headers["x-tl-origin"])

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hmac
 import json
 import os
 import uuid
@@ -10,8 +11,11 @@ from functools import cache
 from typing import Any
 
 from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, Response, content_types
+from aws_lambda_powertools.shared.cookies import Cookie, SameSite
 
 from tasklane.collab.realtime import DynamoRegistry, Registry
+from tasklane.identity.auth_proxy import AuthProxy, AuthRefused
+from tasklane.identity.viewer_ip import BadViewerAddress, viewer_ip_key
 from tasklane.platform.clock import Clock, SystemClock
 from tasklane.platform.db import Db
 from tasklane.platform.outbox import EventBridgePublisher, Publisher, publish_after_commit
@@ -37,19 +41,25 @@ class Deps:
     clock: Clock
     ws_url: str
     bus_name: str
+    auth: AuthProxy | None = None  # auth proxy (07 §7.1); None where sign-in is not served (devserver)
+    origin_secret: str | None = None  # CloudFront `x-tl-origin` (07 §7.4, D-050); None disables the check
 
 
 class ApiError(Exception):
-    def __init__(self, code: str, message: str, fields: dict[str, str] | None = None) -> None:
+    def __init__(
+        self, code: str, message: str, fields: dict[str, str] | None = None, retry_after_s: int | None = None
+    ) -> None:
         super().__init__(message)
-        self.code, self.message, self.fields = code, message, fields
+        self.code, self.message, self.fields, self.retry_after_s = code, message, fields, retry_after_s
 
 
 app = APIGatewayHttpResolver()
 _deps: Deps | None = None
 
 
-def _error(code: str, message: str, fields: dict[str, str] | None = None) -> Response[str]:
+def _error(
+    code: str, message: str, fields: dict[str, str] | None = None, retry_after_s: int | None = None
+) -> Response[str]:
     err: dict[str, Any] = {
         "code": code,
         "message": message,
@@ -57,16 +67,26 @@ def _error(code: str, message: str, fields: dict[str, str] | None = None) -> Res
     }
     if fields:
         err["fields"] = fields
+    headers: dict[str, str] = {}
+    if retry_after_s:
+        err["retry_after_s"] = retry_after_s
+        headers["Retry-After"] = str(retry_after_s)
     return Response(
         status_code=STATUS.get(code, 500),
         content_type=content_types.APPLICATION_JSON,
         body=json.dumps({"error": err}),
+        headers=headers,
     )
 
 
 @app.exception_handler(ApiError)  # type: ignore[untyped-decorator]
 def _api_error(e: ApiError) -> Response[str]:
-    return _error(e.code, e.message, e.fields)
+    return _error(e.code, e.message, e.fields, e.retry_after_s)
+
+
+@app.exception_handler(AuthRefused)  # type: ignore[untyped-decorator]
+def _auth_refused(e: AuthRefused) -> Response[str]:
+    return _error(e.code, e.message, retry_after_s=e.retry_after_s)
 
 
 @app.exception_handler(boards.ValidationFailed)  # type: ignore[untyped-decorator]
@@ -201,23 +221,124 @@ def realtime_ticket() -> dict[str, Any]:
     return {"ticket": deps().registry.issue_ticket(int(u["id"])), "url": deps().ws_url}
 
 
+# --- auth proxy (07 §7.1): outside the JWT authorizer; refresh token only in an HttpOnly cookie -----------------
+REFRESH_COOKIE = "tl_rt"
+REFRESH_MAX_AGE_S = 30 * 24 * 3600  # D-048
+
+
+def _auth() -> AuthProxy:
+    a = deps().auth
+    if a is None:
+        raise ApiError("not_found", "Not found")
+    return a
+
+
+def _viewer_ip() -> str:
+    try:
+        return viewer_ip_key(app.current_event.headers.get("cloudfront-viewer-address"))
+    except BadViewerAddress:
+        raise ApiError("forbidden", "Forbidden") from None
+
+
+def _refresh_cookie(value: str, max_age: int) -> Cookie:
+    return Cookie(
+        name=REFRESH_COOKIE,
+        value=value,
+        path="/api/auth",
+        secure=True,
+        http_only=True,
+        max_age=max_age,
+        same_site=SameSite.STRICT_MODE,
+    )
+
+
+def _cookie_value() -> str | None:
+    for c in app.current_event.cookies or []:
+        name, _, value = c.partition("=")
+        if name.strip() == REFRESH_COOKIE and value:
+            return value
+    return None
+
+
+@app.post("/api/auth/sign-in")
+def auth_sign_in() -> Response[str]:
+    body = _body()
+    email, password = body.get("email"), body.get("password")
+    fields = {
+        k: "Required"
+        for k, v in (("email", email), ("password", password))
+        if not isinstance(v, str) or not v
+    }
+    if fields:
+        raise ApiError("validation_error", "Email and password are required", fields)
+    assert isinstance(email, str) and isinstance(password, str)
+    t = _auth().sign_in(email, password, _viewer_ip())
+    return Response(
+        status_code=200,
+        content_type=content_types.APPLICATION_JSON,
+        body=json.dumps({"access_token": t.access_token, "expires_in": t.expires_in, "token_type": "Bearer"}),
+        cookies=[_refresh_cookie(t.refresh_token or "", REFRESH_MAX_AGE_S)],
+    )
+
+
+@app.post("/api/auth/refresh")
+def auth_refresh() -> dict[str, Any]:
+    rt = _cookie_value()
+    if rt is None:
+        raise ApiError("unauthenticated", "Sign in required")
+    t = _auth().refresh(rt, _viewer_ip())
+    return {"access_token": t.access_token, "expires_in": t.expires_in, "token_type": "Bearer"}
+
+
+@app.post("/api/auth/sign-out")
+def auth_sign_out() -> Response[str]:
+    rt = _cookie_value()
+    if rt:
+        _auth().sign_out(rt)
+    return Response(status_code=204, body="", cookies=[_refresh_cookie("", 0)])
+
+
+@app.post("/api/v1/me/sign-out-everywhere")
+def sign_out_everywhere() -> dict[str, Any]:
+    u = current_user()
+    _auth().sign_out_everywhere(u["email"])
+    return {"signed_out": True}
+
+
 def route_inventory() -> list[tuple[str, str]]:
     """(METHOD, path template) for every registered route — drives generated tests (north-star step 7, AC-K3-4)."""
     routes = [*app._static_routes, *app._dynamic_routes]
     return sorted({(r.method.upper(), r.path) for r in routes})
 
 
+def _origin_ok(event: dict[str, Any], secret: str) -> bool:
+    headers = {k.lower(): v for k, v in (event.get("headers") or {}).items()}
+    return hmac.compare_digest(str(headers.get("x-tl-origin", "")), secret)
+
+
 def handle(event: dict[str, Any], d: Deps) -> dict[str, Any]:
     global _deps
     _deps = d
+    if d.origin_secret and not _origin_ok(event, d.origin_secret):
+        # Not through CloudFront (07 §7.4): the viewer-IP header could be forged, so nothing is served.
+        request_id = (event.get("requestContext") or {}).get("requestId")
+        body = {"error": {"code": "forbidden", "message": "Forbidden", "request_id": request_id}}
+        return {"statusCode": 403, "headers": {"Content-Type": "application/json"}, "body": json.dumps(body)}
     return app.resolve(event, None)  # type: ignore[arg-type]
 
 
 @cache
 def _env_deps() -> Deps:
+    from tasklane.identity.auth_backend import CognitoAuth
     from tasklane.platform.aws_env import boto, db_from_env
+    from tasklane.platform.counters import DynamoCounters
 
     clock = SystemClock()
+    auth = AuthProxy(
+        CognitoAuth(boto("cognito-idp"), os.environ["USER_POOL_ID"], os.environ["COGNITO_CLIENT_ID"]),
+        DynamoCounters(boto("dynamodb"), os.environ["COUNTERS_TABLE"], clock),
+        clock,
+    )
     return Deps(
         db=db_from_env(),
         publisher=EventBridgePublisher(boto("events")),
@@ -225,6 +346,8 @@ def _env_deps() -> Deps:
         clock=clock,
         ws_url=os.environ["WS_URL"],
         bus_name=os.environ["EVENT_BUS_NAME"],
+        auth=auth,
+        origin_secret=os.environ["ORIGIN_SECRET"],
     )
 
 

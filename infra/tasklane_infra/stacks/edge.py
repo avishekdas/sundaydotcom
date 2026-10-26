@@ -70,7 +70,10 @@ class EdgeStack(cdk.Stack):
             ),
             additional_behaviors={
                 "/api/*": cf.BehaviorOptions(
-                    origin=origins.HttpOrigin(api_domain),
+                    origin=origins.HttpOrigin(
+                        api_domain,
+                        custom_headers={"x-tl-origin": identity.origin_secret_ref},  # 07 §7.4, D-050
+                    ),
                     allowed_methods=cf.AllowedMethods.ALLOW_ALL,
                     viewer_protocol_policy=cf.ViewerProtocolPolicy.HTTPS_ONLY,
                     cache_policy=no_cache,

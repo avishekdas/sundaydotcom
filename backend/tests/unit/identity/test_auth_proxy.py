@@ -73,14 +73,27 @@ def test_unknown_email_looks_exactly_like_a_wrong_password(world) -> None:  # ty
     assert known == unknown  # same codes, messages and retry_after_s sequence (SEC-5, D-043)
 
 
-def test_lock_beyond_the_in_request_budget_returns_retry_after(world) -> None:  # type: ignore[no-untyped-def]
-    """D-043: wait in-request only while lock + 0.5 s fits in 20 s, ≤ 2 retries; else 401 + retry_after_s."""
+def test_lock_within_the_budget_is_waited_out_in_request(world) -> None:  # type: ignore[no-untyped-def]
+    """D-043: wait in-request while lock + 0.5 s fits in 20 s (≤ 2 retries)."""
     proxy, _, clock, _ = world
-    for ip in (A, B):  # 10 evaluated failures would close the account (D-044); use 9: lock = 2^(9-5) = 16 s
-        for _ in range(5 if ip == A else 4):
-            _refused(proxy, "raj@example.com", "wrong-password-1", ip)
+    failures = [A] * 5 + [
+        B
+    ] * 4  # 9 evaluated failures (10 would close the account, D-044): lock = 2^(9-5) = 16 s
+    for i, ip in enumerate(failures):
+        _refused(proxy, "raj@example.com", "wrong-password-1", ip)
+        if i < len(failures) - 1:
             clock.advance(seconds=40)  # let each lock expire so every failure is evaluated
-    assert proxy.sign_in("raj@example.com", GOOD, C).access_token  # 16.5 s fits the budget
+    start = clock.now()
+    assert proxy.sign_in("raj@example.com", GOOD, C).access_token
+    assert 16 <= (clock.now() - start).total_seconds() <= 20
+
+
+def test_lock_that_outlasts_the_budget_returns_retry_after(world) -> None:  # type: ignore[no-untyped-def]
+    """S-2b run 8 anomaly: a lock longer than the schedule → after the budget a generic 401 with retry_after_s."""
+    proxy, backend, _, _ = world
+    backend.lock("raj@example.com", seconds=120)
+    refused = _refused(proxy, "raj@example.com", GOOD, C)
+    assert refused.code == "unauthenticated" and refused.retry_after_s
 
 
 def test_d044_ten_failures_close_the_account_for_every_ip(world) -> None:  # type: ignore[no-untyped-def]

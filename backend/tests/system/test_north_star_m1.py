@@ -20,8 +20,8 @@ from tasklane.api.app import Deps, handle, route_inventory
 from tasklane.collab.realtime import InMemoryRegistry
 from tasklane.identity.auth_backend import FakeAuthBackend
 from tasklane.identity.auth_proxy import AuthProxy
-from tasklane.platform.counters import InMemoryCounters
 from tasklane.platform.clock import FakeClock
+from tasklane.platform.counters import InMemoryCounters
 from tasklane.platform.db import StrictDataApiFake
 
 pytestmark = [pytest.mark.integration]
