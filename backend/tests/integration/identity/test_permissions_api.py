@@ -173,6 +173,17 @@ BOARD_ROUTES: dict[tuple[str, str], Cap] = {
     ("POST", "/api/v1/boards/<board_id>/columns"): Cap.EDIT_STRUCTURE,
     ("PATCH", "/api/v1/items/<item_id>/values"): Cap.EDIT_VALUES,
 }
+WORKSPACE_ROUTES = {  # authorized by workspace role / account caps; behaviour in workmgmt/test_workspaces_api.py
+    ("GET", "/api/v1/nav"),
+    ("POST", "/api/v1/workspaces"),
+    ("GET", "/api/v1/workspaces/<workspace_id>"),
+    ("PATCH", "/api/v1/workspaces/<workspace_id>"),
+    ("DELETE", "/api/v1/workspaces/<workspace_id>"),
+    ("POST", "/api/v1/workspaces/<workspace_id>/restore"),
+    ("PUT", "/api/v1/workspaces/<workspace_id>/members/<user_id>"),
+    ("DELETE", "/api/v1/workspaces/<workspace_id>/members/<user_id>"),
+    ("POST", "/api/v1/boards/<board_id>/move"),
+}
 SELF_ROUTES = {  # any active user, about themselves
     ("GET", "/api/v1/me"),
     ("POST", "/api/v1/realtime/ticket"),
@@ -188,7 +199,7 @@ ROLES = {"ada": "admin", "mia": "member", "raj": "member", "vic": "viewer"}
 
 def test_every_route_declares_its_capability() -> None:
     authed = {r for r in route_inventory() if not r[1].startswith("/api/auth/")}
-    assert authed == set(BOARD_ROUTES) | SELF_ROUTES
+    assert authed == set(BOARD_ROUTES) | SELF_ROUTES | WORKSPACE_ROUTES
 
 
 def _expected(who: str, board: int, cap: Cap) -> str:

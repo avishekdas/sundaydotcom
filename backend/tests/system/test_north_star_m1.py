@@ -27,7 +27,7 @@ from tasklane.platform.db import StrictDataApiFake
 pytestmark = [pytest.mark.integration]
 
 VIEWER_SUB = "00000000-0000-0000-0000-000000000043"
-PATH_PARAMS = {"board_id": "10", "item_id": "1001"}
+PATH_PARAMS = {"board_id": "10", "item_id": "1001", "workspace_id": "1", "user_id": "43"}
 
 # Routes a Viewer may call (K1: viewers read everything they can see).
 READ_ROUTES = {
@@ -38,6 +38,8 @@ READ_ROUTES = {
     ("POST", "/api/v1/boards/<board_id>/changes"),
     ("POST", "/api/v1/realtime/ticket"),
     ("POST", "/api/v1/me/sign-out-everywhere"),  # self-service on the caller's own sessions (D-052)
+    ("GET", "/api/v1/nav"),
+    ("GET", "/api/v1/workspaces/<workspace_id>"),
 }
 # Unauthenticated auth-proxy routes (07 §7.1) sit outside the JWT authorizer and outside this check.
 PUBLIC_PREFIX = "/api/auth/"
@@ -46,6 +48,10 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/api/v1/boards/<board_id>/items:fetch"): {"ids": ["1001"]},
     ("PATCH", "/api/v1/items/<item_id>/values"): {"values": {"note": "viewer was here"}},
     ("POST", "/api/v1/boards/<board_id>/columns"): {"title": "Viewer column"},
+    ("POST", "/api/v1/workspaces"): {"name": "Viewer space", "kind": "open"},
+    ("PATCH", "/api/v1/workspaces/<workspace_id>"): {"name": "Renamed"},
+    ("PUT", "/api/v1/workspaces/<workspace_id>/members/<user_id>"): {"role": "member"},
+    ("POST", "/api/v1/boards/<board_id>/move"): {"before_id": None},
 }
 
 
