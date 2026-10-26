@@ -46,3 +46,20 @@ def test_indexes_on_existing_tables_are_concurrent_and_outside_a_transaction(mig
             assert "-- run-mode: no-transaction" in mig.sql, (
                 f"{mig.path.name}: concurrent index needs no-transaction mode"
             )
+
+
+ONLY_INDEXES = re.compile(
+    r"^\s*(create\s+(unique\s+)?index\s+concurrently|drop\s+index\s+concurrently)\b", re.IGNORECASE
+)
+
+
+@pytest.mark.parametrize("mig", discover(MIGRATIONS), ids=lambda m: m.path.name)
+def test_no_transaction_files_hold_only_concurrent_index_statements(mig) -> None:  # type: ignore[no-untyped-def]
+    """M0B-10: without a transaction there is no SET LOCAL lock_timeout / role, so only index builds may run there
+    (indexes are owned by their table's owner, so the migrator role is not needed)."""
+    if not mig.no_transaction:
+        return
+    for s in split_statements(mig.sql):
+        assert ONLY_INDEXES.match(_code(s)), (
+            f"{mig.path.name}: only CREATE/DROP INDEX CONCURRENTLY here: {s[:60]}"
+        )

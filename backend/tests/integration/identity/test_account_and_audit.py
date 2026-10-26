@@ -22,6 +22,7 @@ pytestmark = pytest.mark.integration
 @pytest.fixture
 def deps(board_db: str) -> Deps:
     add_users(board_db)
+    _URI["db"] = board_db
     d = make_deps(board_db)
     cognito = FakeAuthBackend(d.clock)
     for email in ("a@example.com", "v@example.com", "m@example.com", "r@example.com"):
@@ -31,8 +32,13 @@ def deps(board_db: str) -> Deps:
     return d
 
 
+_URI: dict[str, str] = {}
+
+
 def audit(deps: Deps, kind: str) -> list[dict[str, Any]]:
-    rows = deps.db.query(
+    from tasklane.platform.db import StrictDataApiFake
+
+    rows = StrictDataApiFake(_URI["db"]).query(  # the api role cannot read the audit store
         "select actor_id::text as actor, target::text as target, host(ip) as ip from tl.audit_events "
         "where kind = :k order by id",
         {"k": kind},

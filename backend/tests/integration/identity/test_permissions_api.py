@@ -205,6 +205,10 @@ SELF_ROUTES = {  # any active user, about themselves
     ("POST", "/api/v1/realtime/ticket"),
     ("POST", "/api/v1/me/sign-out-everywhere"),
     ("GET", "/api/v1/account"),  # display settings for the top bar (A1.3)
+    (
+        "GET",
+        "/api/v1/health",
+    ),  # deploy smoke test (M0B-6); behind the JWT authorizer like every /api/v1 route
     ("PATCH", "/api/v1/me"),  # own profile (A16)
 }
 WORLD = {  # board id → (item on it, permission set, kind, owners)

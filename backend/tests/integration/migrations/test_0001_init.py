@@ -243,3 +243,14 @@ def test_role_logins_are_enabled_with_passwords(db_uri: str) -> None:
     assert rows == {"tl_reader": True, "tl_api_rw": True}
     with pytest.raises(ValueError, match="unknown role"):
         ensure_role_logins(PsycopgDb(db_uri), {"postgres": "x"})
+
+
+def test_role_logins_store_the_scram_verifier(db_uri: str) -> None:
+    """M0B-14: PostgreSQL keeps a pre-hashed verifier as given, so the password itself never reaches the server."""
+    from tasklane.platform.db import PsycopgDb
+    from tasklane.platform.migrations import ensure_role_logins
+
+    ensure_role_logins(PsycopgDb(db_uri), {"tl_reader": "Reader-Password-1"})
+    with psycopg.connect(db_uri) as c:
+        stored = c.execute("select rolpassword from pg_authid where rolname = 'tl_reader'").fetchone()
+    assert stored and stored[0].startswith("SCRAM-SHA-256$4096:") and "Reader-Password-1" not in stored[0]

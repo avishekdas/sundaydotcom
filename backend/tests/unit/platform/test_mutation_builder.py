@@ -84,3 +84,53 @@ def test_duplicate_names_and_conflicting_params_are_rejected() -> None:
 def test_column_id_must_be_a_slug() -> None:
     with pytest.raises(ValueError, match="column id"):
         set_cell_value(item_id=7, column_id="x'; drop", value=1, assign_column_id=None, **actor())  # type: ignore[arg-type]
+
+
+# --- M0B-5: structural rule checks (the regex heuristics accepted all four probes of the M0b review) -------------
+
+
+def _m() -> Mutation:
+    return set_cell_value(item_id=7, column_id="status", value=1, assign_column_id=None, **actor())  # type: ignore[arg-type]
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "insert into tl.jobs (type, status) select 'x', 'y' from tl.users u where u.id = 1",  # alias named u
+        "insert into tl.jobs (type, status) select 'x', 'y' -- from u\n",  # u only in a comment
+        "insert into tl.jobs (type, status) select 'from u', 'y'",  # u only in a string literal
+        "insert into tl.jobs (type, status) select 'x', u.id::text",  # column reference without a relation
+    ],
+)
+def test_rule_2_fragments_must_read_u_as_a_relation(sql: str) -> None:
+    with pytest.raises(MutationRuleError, match="depend on"):
+        _m().add(Cte("bad", sql))
+
+
+def test_rule_3_fragments_must_not_read_tables_written_by_siblings() -> None:
+    with pytest.raises(MutationRuleError, match="written by"):
+        _m().add(
+            Cte(
+                "bad",
+                "insert into tl.jobs (type, status) select i.name, 'y' from u join tl.items i on i.id = u.id",
+            )
+        )
+    with pytest.raises(MutationRuleError, match="written by"):
+        _m().add(Cte("bad2", "insert into tl.jobs (type, status) select 'x', 'y' from u, tl.outbox o"))
+
+
+def test_rule_4_main_write_must_carry_the_epoch_guard() -> None:
+    with pytest.raises(MutationRuleError, match="guard"):
+        Mutation(
+            lock=Cte("pre", "select id from tl.items where id = :id for update"),
+            main=Cte("u", "update tl.items i set name = 'x' from pre where i.id = pre.id returning i.id"),
+            final="select 1 from u",
+            params={"id": 1},
+        )
+
+
+def test_legal_fragments_still_pass() -> None:
+    m = _m()
+    m.add(Cte("j", "insert into tl.jobs (type, status) select 'audit', 'queued' from u"))
+    m.add(Cte("k", "insert into tl.jobs (type, status) select 'x', 'y' from j"))  # through a dependent CTE
+    assert "k as (" in m.build()[0]

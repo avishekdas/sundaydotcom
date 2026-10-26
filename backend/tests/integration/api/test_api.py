@@ -183,3 +183,8 @@ def test_publish_failure_after_commit_still_returns_the_write(deps: Deps) -> Non
     assert (
         status == 200 and body["version"] == 2
     )  # the outbox row stays unpublished; the sweeper republishes it
+
+
+def test_health_checks_the_database(deps: Deps) -> None:
+    """M0B-6: the pre-traffic hook calls this on the new version (direct invoke, no authorizer)."""
+    assert call(deps, "GET", "/api/v1/health", sub=None) == (200, {"ok": True, "db": True})

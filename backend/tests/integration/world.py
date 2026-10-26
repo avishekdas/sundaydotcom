@@ -43,14 +43,16 @@ def add_users(uri: str) -> None:
 
 def make_deps(uri: str) -> Deps:
     clock = FakeClock(NOW)
-    return Deps(
-        db=StrictDataApiFake(uri),
-        audit_db=StrictDataApiFake(uri),
-        publisher=_NoPublish(),
-        registry=InMemoryRegistry(clock),
-        clock=clock,
-        ws_url="/ws",
-        bus_name="t",
+    return (
+        Deps(  # run as the deployed roles, so a missing grant fails here and not first on dev (M0B-8, M0B-20)
+            db=StrictDataApiFake(uri, role="tl_api_rw"),
+            audit_db=StrictDataApiFake(uri, role="tl_audit_writer"),
+            publisher=_NoPublish(),
+            registry=InMemoryRegistry(clock),
+            clock=clock,
+            ws_url="/ws",
+            bus_name="t",
+        )
     )
 
 

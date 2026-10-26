@@ -133,3 +133,29 @@ def test_expired_cursor_is_gone(board_db: str) -> None:
         changes(db, 10, since_xmin=old)
     with pytest.raises(ValidationFailed):
         changes(db, 10, since_xmin="garbage")
+
+
+def test_set_values_applies_the_assignment_guard(board_db: str) -> None:
+    """M0B-5 (d): the API write path carries the edit_assigned guard (wired to boards in M2, K3/B7.7)."""
+    import psycopg as _pg
+
+    from tasklane.platform.db import StrictDataApiFake as _Fake
+    from tasklane.workmgmt import boards as _boards
+
+    with _pg.connect(board_db, autocommit=True) as c:
+        c.execute(
+            "insert into tl.columns (board_id, id, title, type, settings, position) "
+            "values (10, 'owner', 'Owner', 'people', '{}', 'd')"
+        )
+        c.execute(
+            """update tl.items set values = values || '{"owner": {"p": [{"t": "u", "id": 42}]}}' where id = 1001"""
+        )
+    db = _Fake(board_db)
+    mine = _boards.set_values(
+        db, _boards.Actor(42, 0), 1001, {"note": "a"}, mutation_id="m1", assign_column="owner"
+    )
+    assert mine.failure is None
+    other = _boards.set_values(
+        db, _boards.Actor(7, 0), 1001, {"note": "b"}, mutation_id="m2", assign_column="owner"
+    )
+    assert other.failure == "forbidden"

@@ -41,6 +41,7 @@ READ_ROUTES = {
     ("GET", "/api/v1/nav"),
     ("GET", "/api/v1/workspaces/<workspace_id>"),
     ("GET", "/api/v1/account"),
+    ("GET", "/api/v1/health"),
     ("GET", "/api/v1/boards/<board_id>"),
     ("PATCH", "/api/v1/me"),  # own profile (A16)
 }
