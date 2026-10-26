@@ -33,11 +33,21 @@ class InvalidRefresh(Exception):
     pass
 
 
+class BadCode(Exception):
+    """Wrong, expired or over-used reset code — also used for unknown emails (SEC-5)."""
+
+
+class WeakPassword(Exception):
+    """The new password breaks the pool policy (≥ 12 chars, upper, lower, digit)."""
+
+
 class AuthBackend(Protocol):
     def sign_in(self, email: str, password: str) -> Tokens: ...
     def refresh(self, refresh_token: str) -> Tokens: ...
     def revoke(self, refresh_token: str) -> None: ...
     def global_sign_out(self, email: str) -> None: ...
+    def forgot(self, email: str) -> None: ...
+    def confirm_reset(self, email: str, code: str, new_password: str) -> None: ...
 
 
 def _code(e: ClientError) -> tuple[str, str]:
@@ -90,6 +100,42 @@ class CognitoAuth:
     def global_sign_out(self, email: str) -> None:
         self._c.admin_user_global_sign_out(UserPoolId=self._pool, Username=email.strip().lower())
 
+    def forgot(self, email: str) -> None:
+        """Cognito emails the code (D-047). Unknown users and Cognito's own limits stay silent (SEC-5)."""
+        try:
+            self._c.forgot_password(ClientId=self._client_id, Username=email.strip().lower())
+        except ClientError as e:
+            if _code(e)[0] not in {
+                "UserNotFoundException",
+                "LimitExceededException",
+                "InvalidParameterException",  # no verified email
+                "NotAuthorizedException",
+            }:
+                raise
+
+    def confirm_reset(self, email: str, code: str, new_password: str) -> None:
+        try:
+            self._c.confirm_forgot_password(
+                ClientId=self._client_id,
+                Username=email.strip().lower(),
+                ConfirmationCode=code,
+                Password=new_password,
+            )
+        except ClientError as e:
+            name, msg = _code(e)
+            if name == "InvalidPasswordException":
+                raise WeakPassword(msg) from None
+            if name in {
+                "CodeMismatchException",
+                "ExpiredCodeException",
+                "UserNotFoundException",
+                "LimitExceededException",
+                "TooManyFailedAttemptsException",
+                "NotAuthorizedException",
+            }:
+                raise BadCode from None
+            raise
+
 
 @dataclass
 class _User:
@@ -104,6 +150,8 @@ class FakeAuthBackend:
         self._clock = clock
         self._users: dict[str, _User] = {}
         self._refresh: dict[str, str] = {}
+        self._codes: dict[str, str] = {}
+        self._sent: dict[str, int] = {}
         self.calls = 0
 
     def add_user(self, email: str, password: str) -> None:
@@ -147,3 +195,27 @@ class FakeAuthBackend:
         user = self._users.get(email.strip().lower())
         if user:
             user.tokens.clear()
+
+    def forgot(self, email: str) -> None:
+        key = email.strip().lower()
+        if key in self._users:
+            self._codes[key] = f"{secrets.randbelow(10**6):06d}"
+            self._sent[key] = self._sent.get(key, 0) + 1
+
+    def confirm_reset(self, email: str, code: str, new_password: str) -> None:
+        key = email.strip().lower()
+        if key not in self._users or self._codes.get(key) != code:
+            raise BadCode
+        ok = len(new_password) >= 12 and any(c.isupper() for c in new_password)
+        ok = ok and any(c.islower() for c in new_password) and any(c.isdigit() for c in new_password)
+        if not ok:
+            raise WeakPassword("Password must be at least 12 characters with upper, lower case and a digit")
+        self._users[key].password = new_password
+        del self._codes[key]
+
+    # test helpers
+    def last_code(self, email: str) -> str:
+        return self._codes[email.strip().lower()]
+
+    def codes_sent(self, email: str) -> int:
+        return self._sent.get(email.strip().lower(), 0)

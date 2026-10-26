@@ -86,7 +86,7 @@ def _api_error(e: ApiError) -> Response[str]:
 
 @app.exception_handler(AuthRefused)  # type: ignore[untyped-decorator]
 def _auth_refused(e: AuthRefused) -> Response[str]:
-    return _error(e.code, e.message, retry_after_s=e.retry_after_s)
+    return _error(e.code, e.message, e.fields, e.retry_after_s)
 
 
 @app.exception_handler(boards.ValidationFailed)  # type: ignore[untyped-decorator]
@@ -295,6 +295,38 @@ def auth_sign_out() -> Response[str]:
     rt = _cookie_value()
     if rt:
         _auth().sign_out(rt)
+    return Response(status_code=204, body="", cookies=[_refresh_cookie("", 0)])
+
+
+def _required(body: dict[str, Any], *names: str) -> list[str]:
+    values = [body.get(n) for n in names]
+    fields = {
+        n: "Required" for n, v in zip(names, values, strict=True) if not isinstance(v, str) or not v.strip()
+    }
+    if fields:
+        raise ApiError("validation_error", "Invalid request", fields)
+    return [str(v) for v in values]
+
+
+@app.post("/api/auth/forgot")
+def auth_forgot() -> Response[str]:
+    (email,) = _required(_body(), "email")
+    _auth().forgot(email, _viewer_ip())
+    return Response(status_code=202, body="")
+
+
+def _bump_tokens_valid_after(email: str) -> None:
+    # Access tokens issued before the reset are refused once PermissionSnapshot checks iat (07 §7.1, AR-9).
+    deps().db.execute(
+        "update tl.users set tokens_valid_after = date_trunc('second', now()), updated_at = now() where email = :email",
+        {"email": email},
+    )
+
+
+@app.post("/api/auth/reset")
+def auth_reset() -> Response[str]:
+    email, code, new_password = _required(_body(), "email", "code", "new_password")
+    _auth().reset(email, code.strip(), new_password, _viewer_ip(), on_reset=_bump_tokens_valid_after)
     return Response(status_code=204, body="", cookies=[_refresh_cookie("", 0)])
 
 

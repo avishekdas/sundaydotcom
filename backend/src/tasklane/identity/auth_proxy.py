@@ -17,7 +17,15 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass
 
-from tasklane.identity.auth_backend import AuthBackend, BadCredentials, InvalidRefresh, Locked, Tokens
+from tasklane.identity.auth_backend import (
+    AuthBackend,
+    BadCode,
+    BadCredentials,
+    InvalidRefresh,
+    Locked,
+    Tokens,
+    WeakPassword,
+)
 from tasklane.platform.clock import Clock
 from tasklane.platform.counters import Counters
 
@@ -28,14 +36,16 @@ WAIT_BUDGET_S = 20.0
 LOCK_MARGIN_S = 0.5
 MAX_RETRIES = 2
 REFRESH_LIMIT, REFRESH_WINDOW_S = 60, 60
+FORGOT_PER_EMAIL, FORGOT_PER_IP, RESET_PER_IP, HOUR_S = 3, 10, 10, 3600
 GENERIC = "Email or password is incorrect"
 
 
 @dataclass
 class AuthRefused(Exception):
-    code: str  # unauthenticated | rate_limited
+    code: str  # unauthenticated | rate_limited | validation_error
     message: str
     retry_after_s: int | None = None
+    fields: dict[str, str] | None = None
 
 
 def _metric(name: str) -> None:
@@ -53,6 +63,11 @@ class AuthProxy:
         log: Callable[[str], None] = _metric,
     ) -> None:
         self._b, self._k, self._clock, self._sleep, self._log = backend, counters, clock, sleep, log
+        self.on_reset: Callable[[str], None] | None = None
+
+    @property
+    def backend(self) -> AuthBackend:
+        return self._b
 
     @staticmethod
     def _keys(email: str, ip: str) -> tuple[str, str]:
@@ -110,3 +125,43 @@ class AuthProxy:
 
     def sign_out_everywhere(self, email: str) -> None:
         self._b.global_sign_out(email)
+
+    def _per_ip(self, key: str, limit: int) -> None:
+        if self._k.hit(key, HOUR_S) > limit:
+            raise AuthRefused("rate_limited", "Too many requests", self._k.remaining_s(key))
+
+    def forgot(self, email: str, ip: str) -> None:
+        """Always "accepted" (SEC-5): over the per-email limit nothing is sent, but the caller cannot tell."""
+        self._per_ip(f"forgot#ip#{ip}", FORGOT_PER_IP)
+        email = email.strip().lower()
+        if self._k.hit(f"forgot#{email}", HOUR_S) > FORGOT_PER_EMAIL:
+            return
+        self._b.forgot(email)
+
+    def reset(
+        self,
+        email: str,
+        code: str,
+        new_password: str,
+        ip: str,
+        *,
+        on_reset: Callable[[str], None] | None = None,
+    ) -> None:
+        """K7.3: set the new password with the emailed code, then revoke every session (AC-K7-3)."""
+        self._per_ip(f"reset#ip#{ip}", RESET_PER_IP)
+        email = email.strip().lower()
+        try:
+            self._b.confirm_reset(email, code, new_password)
+        except BadCode:
+            raise AuthRefused(
+                "validation_error", "Invalid request", fields={"code": "Invalid or expired code"}
+            ) from None
+        except WeakPassword as e:
+            msg = str(e) or "Password does not meet the policy"
+            raise AuthRefused("validation_error", "Invalid request", fields={"new_password": msg}) from None
+        self._b.global_sign_out(email)
+        _, account = self._keys(email, "")
+        self._k.clear(account)  # a successful reset reopens sign-in closed by D-044
+        hook = on_reset or self.on_reset
+        if hook:
+            hook(email)

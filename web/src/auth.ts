@@ -12,7 +12,13 @@ export interface Session {
 }
 
 export class AuthError extends Error {
-  constructor(readonly status: number, readonly code: string, message: string, readonly retryAfterS?: number) {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+    readonly retryAfterS?: number,
+    readonly fields?: Record<string, string>,
+  ) {
     super(message);
   }
 }
@@ -40,7 +46,7 @@ async function toSession(r: Response): Promise<Session> {
 
 async function toError(r: Response): Promise<AuthError> {
   const e = (await r.json().catch(() => null))?.error ?? {};
-  return new AuthError(r.status, e.code ?? "error", e.message ?? "Sign-in failed", e.retry_after_s);
+  return new AuthError(r.status, e.code ?? "error", e.message ?? "Sign-in failed", e.retry_after_s, e.fields);
 }
 
 export async function signIn(email: string, password: string, opts: SignInOptions = {}): Promise<Session> {
@@ -73,4 +79,16 @@ export async function signOut(): Promise<void> {
   } catch {
     /* the cookie expires anyway; the UI signs out locally */
   }
+}
+
+/** K7.3: always accepted (SEC-5); Cognito emails a code when the account exists. */
+export async function forgotPassword(email: string): Promise<void> {
+  const r = await post("/forgot", { email });
+  if (!r.ok) throw await toError(r);
+}
+
+/** Sets the new password with the emailed code; every existing session is signed out (AC-K7-3). */
+export async function resetPassword(email: string, code: string, newPassword: string): Promise<void> {
+  const r = await post("/reset", { email, code, new_password: newPassword });
+  if (!r.ok) throw await toError(r);
 }

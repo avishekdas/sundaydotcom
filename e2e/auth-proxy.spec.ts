@@ -36,3 +36,9 @@ test("@ac:AC-K7-2 IP A: the 6th attempt within 15 min is refused (429) without r
   expect(sixth.status()).toBe(429);
   expect(Number(sixth.headers()["retry-after"])).toBeGreaterThan(0);
 });
+
+test("forgot password answers 202 for an unknown email (no email sent; reset code path is Tier A, D-053)", async ({ request }) => {
+  const ghost = `e2e-forgot-${Date.now()}@example.com`;
+  const res = await request.post("/api/auth/forgot", { data: { email: ghost } });
+  expect(res.status()).toBe(202);
+});
