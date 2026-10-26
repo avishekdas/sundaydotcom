@@ -91,3 +91,18 @@
 ## Verdict
 **M0b done after fixes: M0B-1, M0B-2, M0B-3** (plus linking the green Tier B run for `1da2165`, M0B-13).
 M0B-1 and M0B-2 are small code and config changes with tests. M0B-3 is a test restructure. The should-fix items M0B-4…M0B-17 should be closed, or carried into M1 by name in the plan, before M1 builds on the write path (M0B-5, M0B-8) and the deploy safety net (M0B-6, M0B-7, M0B-15).
+
+## Resolution (builder, 2026-10-25)
+| ID | Resolution |
+|---|---|
+| M0B-1 | **Fixed.** Opaque keyset cursor `v1.<xid>.<seq>.<issued>`: rows ordered by (xid, seq), `more` flag + cursor at the last row when a page is full, xmin cursor otherwise; cursors older than 24 h → `410 gone`; SPA engine follows `more` and reloads on 410. Tests: paging without skips (page = 2), expiry, API 410, SPA paging/410 (red first). |
+| M0B-2 | **Fixed.** Sweeper metric alarms use the sweeper cadence: 1-hour period, 1-of-1 on dev (D-037); contract test asserts it. |
+| M0B-3 | **Fixed.** Tier A queues 9 edits before a chaos drain (assert: delivery order ≠ publish order), checks both sessions converge **by pushes alone**, then the 10-missed-edits reconnect; A is never gap-synced. Mutation check: removing gap refetch → 4/4 seeds fail; dropping untouched columns → 2/4 fail. |
+| M0B-4 | **Fixed.** Periodic gap sync every 60 s while connected (SPA engine, fake-timer test). Waiting for the subscribe ack is unnecessary with the cursor taken before the snapshot plus periodic sync. |
+| M0B-7 | **Fixed.** Gate fails closed when `cdk diff` fails, matches "may cause replacement"/`replace]`/removals, and covers the network stack. |
+| M0B-8 | **Partly fixed.** WebSocket and fan-out λs have no DB env or rds-data permission (test); deploy role may invoke only the migrate λ and describe only `tasklane-dev-*` stacks. Carried to M1 (permission framework): narrowing `tl_api_rw` default privileges and epoch/log write access. |
+| M0B-9 | **Fixed.** 0005: partition functions run with `lock_timeout = 5s`. |
+| M0B-11 | **Fixed.** Publish failure after commit is logged (`outbox.publish_error`) and the write still returns 200; the sweeper republishes. |
+| M0B-15 | **Fixed.** Data API resume budget 1+2+4+8 s (≤ 20 s) inside the 29 s api timeout; auto-pause resume latency to be measured on the next cold morning start (M0A-9 stays open as a measurement). |
+| M0B-5, 6, 10, 12, 14, 16, 17 | Carried into M1 by name (plan M1 "Carried from the M0b review"). |
+| M0B-13 | Tier B run for the final head is linked in the plan status after this commit's pipeline. |

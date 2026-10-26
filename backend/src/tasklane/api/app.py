@@ -179,7 +179,10 @@ def patch_values(item_id: str) -> dict[str, Any]:
         )
     if res.failure:
         raise ApiError("not_found" if res.failure == "not_found" else "forbidden", "Cannot update this item")
-    publish_after_commit(deps().publisher, res.events, bus_name=deps().bus_name, source="tasklane")
+    try:  # the write is committed; a failed publish is left to the sweeper (outbox), never a 500 (M0B-11)
+        publish_after_commit(deps().publisher, res.events, bus_name=deps().bus_name, source="tasklane")
+    except Exception as e:
+        print(json.dumps({"metric": "outbox.publish_error", "error": type(e).__name__}))
     return {"id": item_id, "version": res.version, "values": res.values, "computed_pending": True}
 
 

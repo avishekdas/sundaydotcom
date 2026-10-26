@@ -43,8 +43,6 @@ class RealtimeStack(cdk.Stack):
         )
         common = {
             "stage": stage,
-            "cluster": data.cluster,
-            "db_secret": data.role_secrets["tl_reader"],
             "env": {"REALTIME_TABLE": self.table.table_name},
         }
         ws_fn = worker_function(

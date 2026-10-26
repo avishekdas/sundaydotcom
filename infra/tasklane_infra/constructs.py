@@ -26,8 +26,8 @@ def worker_function(
     stage: Stage,
     name: str,
     handler: str,
-    cluster: rds.DatabaseCluster,
-    db_secret: rds.DatabaseSecret,
+    cluster: rds.DatabaseCluster | None = None,
+    db_secret: rds.DatabaseSecret | None = None,
     reserved: int | None = None,
     timeout: cdk.Duration = DEFAULT_TIMEOUT,
     env: dict[str, str] | None = None,
@@ -52,13 +52,21 @@ def worker_function(
             removal_policy=cdk.RemovalPolicy.DESTROY,
         ),
         environment={
-            "CLUSTER_ARN": cluster.cluster_arn,
-            "DB_SECRET_ARN": db_secret.secret_arn,
-            "DB_NAME": "tasklane",
+            **(
+                {
+                    "CLUSTER_ARN": cluster.cluster_arn,
+                    "DB_SECRET_ARN": db_secret.secret_arn,
+                    "DB_NAME": "tasklane",
+                }
+                if cluster is not None and db_secret is not None
+                else {}
+            ),
             "STAGE": stage.name,
             **(env or {}),
         },
     )
+    if cluster is None or db_secret is None:  # no database access at all (M0B-8)
+        return fn
     # Data API on the cluster + read of this function's own role secret only (not the admin secret)
     fn.add_to_role_policy(
         iam.PolicyStatement(

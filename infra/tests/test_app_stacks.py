@@ -121,3 +121,11 @@ def test_test_hooks_are_never_enabled_in_prod() -> (
                 env = fn["Properties"].get("Environment", {}).get("Variables", {})
                 assert not {"TL_FAULT_INJECTION", "TL_FAKE_CLOCK"} & set(env)
                 assert env.get("STAGE", "prod") == "prod"
+
+
+def test_realtime_functions_have_no_database_access(app: cdk.App) -> None:  # M0B-8
+    t = template(app, "tasklane-dev-realtime")
+    for fn in t.find_resources("AWS::Lambda::Function").values():
+        env = fn["Properties"].get("Environment", {}).get("Variables", {})
+        assert "DB_SECRET_ARN" not in env and "CLUSTER_ARN" not in env
+    assert "rds-data" not in str(t.find_resources("AWS::IAM::Policy"))

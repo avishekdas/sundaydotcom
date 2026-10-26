@@ -134,15 +134,24 @@ def server_state(c: Client) -> dict[str, dict[str, Any]]:
 
 
 def state(c: Client) -> dict[str, dict[str, Any]]:
-    return {i: {"version": c.items[i]["version"], "values": c.items[i]["values"]} for i in ("1001", "1002", "1003")}
+    return {
+        i: {"version": c.items[i]["version"], "values": c.items[i]["values"]}
+        for i in ("1001", "1002", "1003")
+    }
 
 
 @pytest.mark.parametrize("seed", [1, 7, 42, 2026])
 def test_two_sessions_converge_and_reconnect_recovers_missed_edits(board_db: str, seed: int) -> None:
     bus = InProcessBus(chaos_seed=seed)
     clock = FakeClock(datetime(2026, 10, 25, 12, tzinfo=UTC))
-    deps = Deps(db=StrictDataApiFake(board_db), publisher=BusPublisher(bus), registry=InMemoryRegistry(clock),
-                clock=clock, ws_url="/ws", bus_name="t")
+    deps = Deps(
+        db=StrictDataApiFake(board_db),
+        publisher=BusPublisher(bus),
+        registry=InMemoryRegistry(clock),
+        clock=clock,
+        ws_url="/ws",
+        bus_name="t",
+    )
     a, b = Client(deps, "a"), Client(deps, "b")
     gw = Gateway({a.conn: a, b.conn: b})
     delivered: list[tuple[str, int]] = []
@@ -160,8 +169,11 @@ def test_two_sessions_converge_and_reconnect_recovers_missed_edits(board_db: str
     published: list[tuple[str, int]] = []
     for k in range(9):
         item = ["1001", "1002", "1003"][k % 3]
-        r = a.api("PATCH", f"/api/v1/items/{item}/values",
-                  {"values": {"status": {"l": k % 3}, "amount": str(k)}, "mutation_id": f"m{k}"})
+        r = a.api(
+            "PATCH",
+            f"/api/v1/items/{item}/values",
+            {"values": {"status": {"l": k % 3}, "amount": str(k)}, "mutation_id": f"m{k}"},
+        )
         published.append((item, r["version"]))
     bus.drain()
     assert delivered != published, "chaos must reorder or duplicate deliveries"
@@ -172,7 +184,9 @@ def test_two_sessions_converge_and_reconnect_recovers_missed_edits(board_db: str
     b.disconnect()
     for k in range(10):
         item = ["1001", "1002", "1003"][k % 3]
-        a.api("PATCH", f"/api/v1/items/{item}/values", {"values": {"note": f"edit {k}", "amount": str(100 + k)}})
+        a.api(
+            "PATCH", f"/api/v1/items/{item}/values", {"values": {"note": f"edit {k}", "amount": str(100 + k)}}
+        )
     bus.drain()
     truth = server_state(a)
     assert state(a) == truth

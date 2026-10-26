@@ -59,3 +59,10 @@ def test_outbox_worker_can_ack_and_sweep_but_nothing_else(fresh_db: str) -> None
         ):
             with pytest.raises(errors.InsufficientPrivilege):
                 c.execute(sql)
+
+
+def test_partition_ddl_functions_have_a_lock_timeout(fresh_db: str) -> None:  # M0B-9
+    with psycopg.connect(fresh_db) as c:
+        rows = c.execute("""select proname, proconfig from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+                            where n.nspname = 'tl' and proname in ('ensure_partitions', 'drop_partitions_older_than')""").fetchall()
+    assert len(rows) == 2 and all(any(x.startswith("lock_timeout=") for x in cfg or []) for _, cfg in rows)

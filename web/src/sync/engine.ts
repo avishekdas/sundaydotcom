@@ -41,6 +41,9 @@ export class SyncEngine {
   private stopped = false;
   private reconnectDelay = 500;
   onChange: () => void = () => {};
+  private timer: ReturnType<typeof setInterval> | undefined;
+  /** While connected, gap-sync periodically: recovers pushes lost without a disconnect (M0B-4). */
+  static GAP_SYNC_MS = 60_000;
 
   constructor(private readonly api: BoardApi, private readonly sockets: SocketFactory, readonly boardId: string,
               private readonly sleep: (ms: number) => Promise<void> = (ms) => new Promise((r) => setTimeout(r, ms))) {
@@ -54,6 +57,7 @@ export class SyncEngine {
     this.cursor = c.next_since_xmin;
     this.generation = c.db_generation;
     await this.load();                // 3. … then load the snapshot
+    this.timer = setInterval(() => { if (!this.paused) void this.gapSync().catch(() => {}); }, SyncEngine.GAP_SYNC_MS);
   }
 
   private async load(): Promise<void> {
@@ -125,6 +129,7 @@ export class SyncEngine {
 
   stop(): void {
     this.stopped = true;
+    if (this.timer) clearInterval(this.timer);
     this.socket?.close();
   }
 

@@ -113,4 +113,20 @@ describe("SyncEngine", () => {
     await e.gapSync();
     expect(e.order).toEqual(["1", "2", "3"]);
   });
+
+  it("recovers a lost push while connected via the periodic gap sync (M0B-4)", async () => {
+    vi.useFakeTimers();
+    try {
+      const srv = new FakeServer();
+      const { f } = sockets(srv.calls);
+      const e = new SyncEngine(srv, f, "10", async () => {});
+      await e.start();
+      srv.write("2", "note", "lost push");          // never delivered over the socket
+      await vi.advanceTimersByTimeAsync(SyncEngine.GAP_SYNC_MS + 10);
+      expect(e.store.view("2")).toMatchObject(srv.items.get("2")!);
+      e.stop();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

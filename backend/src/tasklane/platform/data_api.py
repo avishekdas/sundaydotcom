@@ -62,7 +62,7 @@ class DataApiDb:
         secret_arn: str,
         database: str,
         transaction_id: str | None = None,
-        resume_attempts: int = 8,
+        resume_attempts: int = 5,  # 1+2+4+8 s of backoff: fits the 29 s api timeout (M0B-15)
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
         self._client = client

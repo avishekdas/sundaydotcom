@@ -275,5 +275,9 @@ def changes(db: Db, board_id: int, *, since_xmin: str | None) -> dict[str, Any]:
         nxt = encode_cursor(int(last["xid"]), int(last["seq"]), issued)
     else:
         nxt = encode_cursor(int(doc["xmin"]), -1, now_s)
-    return {"next_since_xmin": nxt, "db_generation": doc["db_generation"], "more": more,
-            "changes": [{k: r[k] for k in ("item_id", "kind", "columns", "seq")} for r in page]}
+    return {
+        "next_since_xmin": nxt,
+        "db_generation": doc["db_generation"],
+        "more": more,
+        "changes": [{k: r[k] for k in ("item_id", "kind", "columns", "seq")} for r in page],
+    }
