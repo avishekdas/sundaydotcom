@@ -1,6 +1,7 @@
 import type { BoardApi, Schema, Socket, SocketFactory } from "./sync/engine";
 import type { ServerItem } from "./sync/types";
 import type { AppConfig } from "./config";
+import type { NavTree } from "./ui/LeftNav";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly fields?: Record<string, string>) {
@@ -25,7 +26,16 @@ export class Api implements BoardApi {
     return data as T;
   }
 
-  me() { return this.call<{ id: string; name: string; email: string; role: string }>("GET", "/me"); }
+  me() {
+    return this.call<{ id: string; name: string; email: string; role: string; capabilities: string[] }>("GET", "/me");
+  }
+  nav() { return this.call<NavTree>("GET", "/nav"); }
+  createWorkspace(name: string, kind: "open" | "closed") {
+    return this.call<{ id: string; name: string; kind: string }>("POST", "/workspaces", { name, kind });
+  }
+  async moveBoard(boardId: string, beforeId: string | null) {
+    await this.call<unknown>("POST", `/boards/${boardId}/move`, { before_id: beforeId });
+  }
   schema(b: string) { return this.call<Schema>("GET", `/boards/${b}/schema`); }
   query(b: string) { return this.call<{ ids: string[]; groups: { id: string; count: number }[] }>("POST", `/boards/${b}/query`, {}); }
   async fetch(b: string, ids: string[]) {

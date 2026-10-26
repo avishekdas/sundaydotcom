@@ -36,6 +36,9 @@ def add_users(uri: str) -> None:
             " (45, 'r@example.com', 'Raj', 'member', 'active', %s)",
             (SUBS["vic"], SUBS["mia"], SUBS["raj"]),
         )
+        c.execute(
+            "select setval('tl.id_seq', 100000)"
+        )  # fixture ids are explicit; generated ones start above them
 
 
 def make_deps(uri: str) -> Deps:

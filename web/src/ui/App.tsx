@@ -3,6 +3,7 @@ import { Api } from "../api";
 import { AuthError, forgotPassword, refresh, resetPassword, signIn, signOut, type Session } from "../auth";
 import { loadConfig, type AppConfig } from "../config";
 import { BoardView } from "./BoardView";
+import { LeftNav } from "./LeftNav";
 
 const DEFAULT_BOARD = "10";
 
@@ -45,16 +46,26 @@ export function App() {
     }
     return current.accessToken;
   };
-  const api = new Api(cfg, token);
-  const boardId = new URLSearchParams(location.search).get("board") ?? DEFAULT_BOARD;
+  return <Shell cfg={cfg} token={token} onSignOut={() => { void signOut(); setSession(null); }} />;
+}
+
+function Shell({ cfg, token, onSignOut }: { cfg: AppConfig; token: () => Promise<string>; onSignOut: () => void }) {
+  const [api] = useState(() => new Api(cfg, token));
+  const [boardId, setBoardId] = useState(() => new URLSearchParams(location.search).get("board") ?? DEFAULT_BOARD);
+  const [caps, setCaps] = useState<string[]>([]);
+  useEffect(() => { api.me().then((m) => setCaps(m.capabilities ?? [])).catch(() => setCaps([])); }, [api]);
+  const open = (id: string) => { history.pushState(null, "", `?board=${id}`); setBoardId(id); };
   return (
     <div className="shell">
       <header className="topbar">
         <span className="brand">Tasklane</span>
         <span className="stage">{cfg.stage}</span>
-        <button className="link" data-testid="sign-out" onClick={() => { void signOut(); setSession(null); }}>Sign out</button>
+        <button className="link" data-testid="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
-      <BoardView api={api} boardId={boardId} stage={cfg.stage} />
+      <div className="body">
+        <LeftNav api={api} canCreateWorkspace={caps.includes("create_workspace")} onOpenBoard={open} currentBoard={boardId} />
+        <main className="content"><BoardView key={boardId} api={api} boardId={boardId} stage={cfg.stage} /></main>
+      </div>
     </div>
   );
 }

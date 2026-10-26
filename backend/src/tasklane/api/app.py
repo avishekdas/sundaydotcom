@@ -15,13 +15,13 @@ from aws_lambda_powertools.shared.cookies import Cookie, SameSite
 
 from tasklane.collab.realtime import DynamoRegistry, Registry
 from tasklane.identity.auth_proxy import AuthProxy, AuthRefused
-from tasklane.identity.authz import Cap
+from tasklane.identity.authz import AccountCap, Cap
 from tasklane.identity.snapshot import PermissionSnapshot, SnapshotCache
 from tasklane.identity.viewer_ip import BadViewerAddress, viewer_ip_key
 from tasklane.platform.clock import Clock, SystemClock
 from tasklane.platform.db import Db
 from tasklane.platform.outbox import EventBridgePublisher, Publisher, publish_after_commit
-from tasklane.workmgmt import boards
+from tasklane.workmgmt import boards, workspaces
 
 STATUS = {
     "validation_error": 400,
@@ -95,6 +95,31 @@ def _auth_refused(e: AuthRefused) -> Response[str]:
 
 @app.exception_handler(boards.ValidationFailed)  # type: ignore[untyped-decorator]
 def _validation(e: boards.ValidationFailed) -> Response[str]:
+    return _error("validation_error", "Invalid request", e.fields)
+
+
+@app.exception_handler(workspaces.NotFound)  # type: ignore[untyped-decorator]
+def _ws_not_found(_e: workspaces.NotFound) -> Response[str]:
+    return _error("not_found", "Not found")
+
+
+@app.exception_handler(workspaces.Forbidden)  # type: ignore[untyped-decorator]
+def _ws_forbidden(_e: workspaces.Forbidden) -> Response[str]:
+    return _error("forbidden", "You do not have permission to do this")
+
+
+@app.exception_handler(workspaces.Conflict)  # type: ignore[untyped-decorator]
+def _ws_conflict(e: workspaces.Conflict) -> Response[str]:
+    return _error("conflict", str(e))
+
+
+@app.exception_handler(workspaces.Gone)  # type: ignore[untyped-decorator]
+def _ws_gone(_e: workspaces.Gone) -> Response[str]:
+    return _error("gone", "This workspace can no longer be restored")
+
+
+@app.exception_handler(workspaces.Invalid)  # type: ignore[untyped-decorator]
+def _ws_invalid(e: workspaces.Invalid) -> Response[str]:
     return _error("validation_error", "Invalid request", e.fields)
 
 
@@ -272,6 +297,74 @@ def create_column(board_id: str) -> Response[str]:
 def realtime_ticket() -> dict[str, Any]:
     u = current_user()
     return {"ticket": deps().registry.issue_ticket(int(u["id"])), "url": deps().ws_url}
+
+
+# --- workspaces and the left nav (A2, A4, K2) ---------------------------------------------------------------------
+
+
+def _json(status: int, doc: Any) -> Response[str]:
+    return Response(status_code=status, content_type=content_types.APPLICATION_JSON, body=json.dumps(doc))
+
+
+@app.get("/api/v1/nav")
+def get_nav() -> dict[str, Any]:
+    return workspaces.nav(deps().db, snapshot().user_id)
+
+
+@app.post("/api/v1/workspaces")
+def create_workspace() -> Response[str]:
+    s = snapshot()
+    if AccountCap.CREATE_WORKSPACE not in s.account_caps():
+        raise ApiError("forbidden", "You do not have permission to do this")
+    return _json(201, workspaces.create(deps().db, s.user_id, _body()))
+
+
+@app.get("/api/v1/workspaces/<workspace_id>")
+def get_workspace(workspace_id: str) -> dict[str, Any]:
+    return workspaces.get(deps().db, snapshot().user_id, _int(workspace_id))
+
+
+@app.patch("/api/v1/workspaces/<workspace_id>")
+def update_workspace(workspace_id: str) -> dict[str, Any]:
+    uid, ws = snapshot().user_id, _int(workspace_id)
+    workspaces.get(deps().db, uid, ws)  # visibility first, then ownership, then the body
+    return workspaces.update(deps().db, uid, ws, _body())
+
+
+@app.delete("/api/v1/workspaces/<workspace_id>")
+def delete_workspace(workspace_id: str) -> Response[str]:
+    workspaces.delete(deps().db, snapshot().user_id, _int(workspace_id))
+    return Response(status_code=204, body="")
+
+
+@app.post("/api/v1/workspaces/<workspace_id>/restore")
+def restore_workspace(workspace_id: str) -> dict[str, Any]:
+    return workspaces.restore(deps().db, snapshot().user_id, _int(workspace_id))
+
+
+@app.put("/api/v1/workspaces/<workspace_id>/members/<user_id>")
+def put_workspace_member(workspace_id: str, user_id: str) -> dict[str, Any]:
+    uid, ws = snapshot().user_id, _int(workspace_id)
+    workspaces.put_member(deps().db, uid, ws, _int(user_id), _body().get("role"))
+    return workspaces.get(deps().db, uid, ws)
+
+
+@app.delete("/api/v1/workspaces/<workspace_id>/members/<user_id>")
+def delete_workspace_member(workspace_id: str, user_id: str) -> Response[str]:
+    workspaces.remove_member(deps().db, snapshot().user_id, _int(workspace_id), _int(user_id))
+    return Response(status_code=204, body="")
+
+
+@app.post("/api/v1/boards/<board_id>/move")
+def move_board(board_id: str) -> dict[str, Any]:
+    b, s = _board(board_id, Cap.READ)
+    if AccountCap.CREATE_BOARD not in s.account_caps():  # A4.2: members with create rights
+        raise ApiError("forbidden", "You do not have permission to do this")
+    before = _body().get("before_id")
+    if before is not None and (not isinstance(before, str) or not before.isdigit()):
+        raise ApiError("validation_error", "Invalid request", {"before_id": "board id or null"})
+    workspaces.move_board(deps().db, s.user_id, b, int(before) if before else None)
+    return {"id": board_id}
 
 
 # --- auth proxy (07 §7.1): outside the JWT authorizer; refresh token only in an HttpOnly cookie -----------------
