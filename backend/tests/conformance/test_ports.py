@@ -103,3 +103,11 @@ def test_idp_create_disable_enable_signout(idp: IdentityProvider) -> None:
     idp.enable("new@example.com")
     assert idp.is_enabled("new@example.com") is True
     idp.global_sign_out("new@example.com")
+
+
+def test_idp_set_password_and_find_sub(idp: IdentityProvider) -> None:
+    """Scripted test identities (PE-17, D-049) need a permanent password and a lookup by email."""
+    assert idp.find_sub("nobody@example.com") is None
+    sub = idp.create_user("pw@example.com", "Pw Person")
+    idp.set_password("pw@example.com", "Correct-Horse-42")
+    assert idp.find_sub("PW@example.com") == sub
