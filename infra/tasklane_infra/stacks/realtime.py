@@ -115,6 +115,8 @@ class RealtimeStack(cdk.Stack):
                 )
             ],
         )
+        self.functions = {"ws-handlers": ws_fn, "fanout": fan}
+        self.dlqs = [dlq]
         for aid, fn in (("WsErrors", ws_fn), ("FanoutErrors", fan)):
             alarm(
                 self,

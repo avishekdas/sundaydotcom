@@ -16,3 +16,6 @@ infra/.build/
 web/node_modules/
 web/dist/
 *.tsbuildinfo
+backend/mutants/
+web/reports/
+web/.stryker-tmp/

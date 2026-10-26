@@ -26,6 +26,8 @@ class MessagingStack(cdk.Stack):
             self.alerts.add_subscription(subs.EmailSubscription(stage.alert_email))
         self.bus = events.EventBus(self, "Bus", event_bus_name=p)
 
+        self.dlqs: list[sqs.Queue] = []
+
         def dlq(id_: str, name: str) -> sqs.Queue:
             q = sqs.Queue(
                 self,
@@ -44,6 +46,7 @@ class MessagingStack(cdk.Stack):
                 summary=f"Messages in {p}-{name}-dlq",
                 topic=self.alerts,
             )
+            self.dlqs.append(q)
             return q
 
         ack_dlq = dlq("AckDlq", "outbox-ack")

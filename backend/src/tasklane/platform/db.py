@@ -172,7 +172,18 @@ class PsycopgDb:
 
 
 class StrictDataApiFake(PsycopgDb):
-    """PsycopgDb that enforces RDS Data API semantics (AR-24): run on every PR."""
+    """PsycopgDb that enforces RDS Data API semantics (AR-24): run on every PR.
+
+    ``role`` runs every statement as that database role (``SET ROLE``), the way the Data API logs in with the
+    function's own secret — so a missing grant fails in tests, not first on dev (M0B-20).
+    """
+
+    def __init__(self, uri: str, *, role: str | None = None, _conn: Any = None) -> None:
+        super().__init__(uri, _conn=_conn)
+        if role is not None:
+            if not re.fullmatch(r"tl_[a-z_]+", role):
+                raise ValueError(f"bad role {role!r}")
+            self._conn.execute(f"set role {role}")
 
     def _check(self, sql: str, params: Params | None) -> None:
         validate_sql(sql)

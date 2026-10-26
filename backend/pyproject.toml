@@ -25,6 +25,7 @@ dev = [
   "httpx>=0.27",
   "pyyaml>=6.0.3",
   "types-pyyaml>=6.0.12.20260906",
+  "mutmut>=3.2,<4",
 ]
 
 [build-system]
@@ -75,3 +76,10 @@ layers = [
   "tasklane.identity",
   "tasklane.platform",
 ]
+
+[tool.mutmut]
+# Nightly mutation testing (plan §1.2, M0B-12): authorization and pure kernels; score must stay ≥ 70 %.
+paths_to_mutate = ["src/tasklane/identity/authz.py", "src/tasklane/identity/viewer_ip.py", "src/tasklane/workmgmt/positions.py"]
+tests_dir = ["tests/unit/identity/", "tests/unit/workmgmt/"]
+pytest_add_cli_args = ["-q", "-p", "no:cacheprovider"]
+also_copy = ["src/tasklane"]

@@ -1,0 +1,60 @@
+name: nightly
+# Plan §1.1/§1.2 (TP-12, M0B-12): 500 rotating Tier A chaos seeds on top of the fixed ones, and mutation testing
+# of authorization kernels (mutmut) and the client reconciler (Stryker), each breaking under 70 %.
+# A failing seed is in the test id: promote it into FIXED_SEEDS (backend/tests/system/test_north_star_m0b.py).
+on:
+  schedule: [{ cron: "0 6 * * *" }]   # 06:00 UTC
+  workflow_dispatch:
+permissions: { contents: read }
+jobs:
+  chaos-seeds:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:18.6
+        env: { POSTGRES_PASSWORD: postgres }
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 2s --health-timeout 5s --health-retries 20
+    env:
+      TL_TEST_PG_URI: postgresql://postgres:postgres@localhost:5432/postgres
+      TL_CHAOS_SEEDS: 500
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { python-version: "3.13", enable-cache: true }
+      - run: uv sync --locked
+      - run: uv run pytest -q tests/system/test_north_star_m0b.py
+  mutation-python:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults: { run: { working-directory: backend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with: { python-version: "3.13", enable-cache: true }
+      - run: uv sync --locked
+      - run: uv run mutmut run
+      - name: mutation score >= 70 % (killed / mutants that tests cover)
+        run: |
+          uv run mutmut export-cicd-stats
+          python3 - <<'PY'
+          import json
+          s = json.load(open("mutants/mutmut-cicd-stats.json"))
+          covered = s["total"] - s["no_tests"] - s["skipped"]
+          score = 100 * s["killed"] / covered if covered else 0
+          print(f"mutmut: {s['killed']}/{covered} killed = {score:.1f} %")
+          raise SystemExit(0 if score >= 70 else 1)
+          PY
+  mutation-web:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    defaults: { run: { working-directory: web } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
+      - run: npm ci --no-audit --no-fund
+      - run: npx stryker run   # stryker.config.json: thresholds.break 70

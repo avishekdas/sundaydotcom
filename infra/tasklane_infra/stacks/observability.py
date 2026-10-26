@@ -53,7 +53,11 @@ class ObservabilityStack(cdk.Stack):
                 send_to_cloud_watch_logs=False,
             )
         five = cdk.Duration.minutes(5)
-        fns = {"api": api.function, **workers.functions}
+        fns = {
+            "api": api.function,
+            **workers.functions,
+            **realtime.functions,
+        }  # every runtime function (M0B-16/17)
         dash = cw.Dashboard(self, "Dash", dashboard_name=f"tasklane-{stage.name}")
         dash.add_widgets(
             cw.GraphWidget(
@@ -89,6 +93,16 @@ class ObservabilityStack(cdk.Stack):
                         period=five,
                         dimensions_map={"DBClusterIdentifier": data.cluster.cluster_identifier},
                     )
+                ],
+            ),
+        )
+        dash.add_widgets(
+            cw.GraphWidget(
+                title="DLQ depth (any > 0 pages: runbook dlq-triage)",
+                width=24,
+                left=[
+                    q.metric_approximate_number_of_messages_visible(period=five, label=q.node.id)
+                    for q in [*messaging.dlqs, *realtime.dlqs]
                 ],
             ),
         )

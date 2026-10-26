@@ -32,4 +32,4 @@ def ensure_bootstrap(db: Db, idp: IdentityProvider, email: str, name: str = "Adm
            where not exists (select 1 from tl.workspaces where is_default and state = 'active')""",
         {"n": DEFAULT_WORKSPACE},
     )
-    db.execute("update tl.account set perm_epoch = perm_epoch + 1")
+    db.query("select tl.bump_perm_epoch() as epoch")

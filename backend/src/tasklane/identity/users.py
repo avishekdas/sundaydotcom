@@ -53,7 +53,7 @@ def _get(db: Db, user_id: int) -> dict[str, Any]:
 
 
 def _bump_epoch(db: Db) -> None:
-    db.execute("update tl.account set perm_epoch = perm_epoch + 1")
+    db.query("select tl.bump_perm_epoch() as epoch")
 
 
 def invite(db: Db, idp: IdentityProvider, body: dict[str, Any]) -> dict[str, Any]:

@@ -8,6 +8,8 @@ gateway, and a client model that applies the same version rule as the SPA reconc
 from __future__ import annotations
 
 import json
+import os
+import random
 from datetime import UTC, datetime
 from typing import Any
 
@@ -140,8 +142,19 @@ def state(c: Client) -> dict[str, dict[str, Any]]:
     }
 
 
+FIXED_SEEDS = [1, 7, 42, 2026]
+
+
+def _seeds() -> list[int]:
+    """PRs run the fixed seeds; the nightly job adds TL_CHAOS_SEEDS rotating ones (TP-12), chosen from the date so a
+    failing night is reproducible — the failing seed is in the test id; promote it into FIXED_SEEDS."""
+    extra = int(os.environ.get("TL_CHAOS_SEEDS", "0"))
+    rng = random.Random(int(datetime.now(UTC).strftime("%Y%m%d")))  # noqa: S311 — reproducible test seeds
+    return FIXED_SEEDS + [rng.randrange(1, 2**31) for _ in range(extra)]
+
+
 @pytest.mark.north_star("skeleton.converge")
-@pytest.mark.parametrize("seed", [1, 7, 42, 2026])
+@pytest.mark.parametrize("seed", _seeds())
 def test_two_sessions_converge_and_reconnect_recovers_missed_edits(board_db: str, seed: int) -> None:
     bus = InProcessBus(chaos_seed=seed)
     clock = FakeClock(datetime(2026, 10, 25, 12, tzinfo=UTC))

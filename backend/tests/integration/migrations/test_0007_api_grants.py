@@ -24,7 +24,7 @@ API_RW: dict[str, set[str]] = {
     "item_text": {SEL, INS, UPD, DEL},
     "items": {SEL, INS, UPD},
     "jobs": {SEL, INS},
-    "outbox": {INS},
+    "outbox": {SEL, INS},  # INSERT … RETURNING needs SELECT (the cell write returns the payload)
     "recompute_pending": {SEL, INS, UPD},
     "users": {SEL, INS, UPD, DEL},
     "view_item_positions": {SEL, INS, UPD, DEL},

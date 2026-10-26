@@ -13,6 +13,7 @@ from aws_cdk import aws_lambda as lambda_
 from aws_cdk import aws_logs as logs
 from constructs import Construct
 
+from tasklane_infra.assets import backend_asset
 from tasklane_infra.config import Stage
 from tasklane_infra.constructs import alarm, worker_function
 from tasklane_infra.stacks.data import DataStack
@@ -102,13 +103,39 @@ class ApiStack(cdk.Stack):
             evaluation_periods=1,
             treat_missing_data=cw.TreatMissingData.NOT_BREACHING,
             alarm_description="api live alias errors during/after a deploy — runbook: "
-            "https://github.com/avishekdas/sundaydotcom/blob/main/ops/runbooks/api.md",
+            "https://github.com/avishekdas/sundaydotcom/blob/main/ops/runbooks/bad-deploy.md",
         )
         canary_alarm.add_alarm_action(cdk.aws_cloudwatch_actions.SnsAction(messaging.alerts))
+        # M0B-6: before any traffic shifts, a hook invokes the new version's /api/v1/health (DB round trip); a
+        # failure stops the deployment. The canary window itself gets real traffic only once users exist.
+        hook = lambda_.Function(
+            self,
+            "PredeployHook",
+            function_name=f"tasklane-{stage.name}-predeploy-hook",
+            runtime=lambda_.Runtime.PYTHON_3_13,
+            architecture=lambda_.Architecture.ARM_64,
+            handler="tasklane.workers.predeploy_hook.handler",
+            code=lambda_.Code.from_asset(backend_asset()),
+            timeout=cdk.Duration.seconds(60),
+            memory_size=256,
+            environment={
+                "TARGET_VERSION_ARN": fn.current_version.function_arn,
+                "ORIGIN_SECRET": identity.origin_secret_ref,
+            },
+            log_group=logs.LogGroup(
+                self,
+                "PredeployHookLogs",
+                log_group_name=f"/aws/lambda/tasklane-{stage.name}-predeploy-hook",
+                retention=logs.RetentionDays.ONE_MONTH,
+                removal_policy=cdk.RemovalPolicy.DESTROY,
+            ),
+        )
+        fn.current_version.grant_invoke(hook)
         codedeploy.LambdaDeploymentGroup(
             self,
             "Canary",
             alias=live,
+            pre_hook=hook,
             deployment_config=codedeploy.LambdaDeploymentConfig.CANARY_10_PERCENT_5_MINUTES,
             alarms=[canary_alarm],
             auto_rollback=codedeploy.AutoRollbackConfig(failed_deployment=True, deployment_in_alarm=True),

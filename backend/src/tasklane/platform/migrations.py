@@ -10,8 +10,12 @@ are owned by the migrator role and get its default privileges. Applied files are
 
 from __future__ import annotations
 
+import base64
 import hashlib
+import hmac
 import re
+import secrets
+import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -91,18 +95,25 @@ def apply_migrations(target: Db | str, directory: Path, *, lock_timeout: str = "
     for mig in migrations:
         if mig.no_transaction:
             if mig.version not in _applied(db):
-                # Each statement autocommits; table ownership comes from the admin's tl_migrator membership.
-                # Statements must be idempotent (IF NOT EXISTS); an invalid index from a failed run must be
-                # dropped by hand before re-running (runbook: ops/runbooks/migrations.md).
-                for stmt in split_statements(mig.sql):
-                    db.execute(stmt)
-                with db.transaction() as tx:
-                    tx.execute(
-                        "insert into tl.schema_migrations (version, name, checksum) values (:v, :n, :c) "
-                        "on conflict (version) do nothing",
-                        {"v": mig.version, "n": mig.path.stem, "c": mig.checksum},
-                    )
-                done.append(mig.version)
+                # Each statement autocommits (no SET LOCAL lock_timeout / role), so these files hold only
+                # CREATE/DROP INDEX CONCURRENTLY (policy test) — an index belongs to its table's owner. A lease row
+                # keeps a second runner (pipeline + manual invoke) out; the Data API cannot hold an advisory lock
+                # across calls (M0B-10). Statements must be idempotent (IF NOT EXISTS); an invalid index from a
+                # failed run is dropped by hand before re-running (runbook: ops/runbooks/migrations.md).
+                holder = _take_lease(db)
+                try:
+                    if mig.version not in _applied(db):
+                        for stmt in split_statements(mig.sql):
+                            db.execute(stmt)
+                        with db.transaction() as tx:
+                            tx.execute(
+                                "insert into tl.schema_migrations (version, name, checksum) values (:v, :n, :c) "
+                                "on conflict (version) do nothing",
+                                {"v": mig.version, "n": mig.path.stem, "c": mig.checksum},
+                            )
+                        done.append(mig.version)
+                finally:
+                    _release_lease(db, holder)
             continue
         with db.transaction() as tx:
             tx.execute("select pg_advisory_xact_lock(:k)", {"k": LOCK_KEY})
@@ -124,15 +135,51 @@ def apply_migrations(target: Db | str, directory: Path, *, lock_timeout: str = "
     return done
 
 
-def _quote_literal(text: str) -> str:
-    return "'" + text.replace("'", "''") + "'"
+LEASE = "migrations"
+
+
+def _take_lease(db: Db) -> str:
+    holder = str(uuid.uuid4())
+    rows = db.query(
+        """insert into tl.leases (name, holder, until) values (:n, :h, now() + interval '15 minutes')
+           on conflict (name) do update set holder = excluded.holder, until = excluded.until
+             where tl.leases.until < now()
+           returning name""",
+        {"n": LEASE, "h": holder},
+    )
+    if not rows:
+        raise RuntimeError("another migration run holds the lease; retry when it has finished")
+    return holder
+
+
+def _release_lease(db: Db, holder: str) -> None:
+    db.execute(
+        "update tl.leases set until = now() - interval '1 second' where name = :n and holder = :h",
+        {"n": LEASE, "h": holder},
+    )
+
+
+def scram_verifier(password: str, *, salt: bytes | None = None, iterations: int = 4096) -> str:
+    """PostgreSQL's SCRAM-SHA-256 verifier (RFC 5802/7677): what the server stores instead of the password."""
+    salt = salt if salt is not None else secrets.token_bytes(16)
+    salted = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iterations)
+    client_key = hmac.new(salted, b"Client Key", "sha256").digest()
+    stored_key = hashlib.sha256(client_key).digest()
+    server_key = hmac.new(salted, b"Server Key", "sha256").digest()
+    salt_b64, stored_b64, server_b64 = (base64.b64encode(b).decode() for b in (salt, stored_key, server_key))
+    return f"SCRAM-SHA-256${iterations}:{salt_b64}${stored_b64}:{server_b64}"
+
+
+def role_password_sql(role: str, password: str) -> str:
+    """``ALTER ROLE … PASSWORD '<verifier>'``: the plaintext never reaches SQL, logs or pg_stat_statements (M0B-14)."""
+    if role not in LOGIN_ROLES:
+        raise ValueError(f"unknown role {role!r}")
+    if not password or "\x00" in password:
+        raise ValueError(f"empty or invalid password for {role}")
+    return f"alter role \"{role}\" login password '{scram_verifier(password)}'"
 
 
 def ensure_role_logins(db: Db, passwords: Mapping[str, str]) -> None:
-    """Give each function-class role LOGIN and the password from its secret (M0A-3). Idempotent."""
+    """Give each function-class role LOGIN and the password from its secret (M0A-3), as a SCRAM verifier."""
     for role, password in passwords.items():
-        if role not in LOGIN_ROLES:
-            raise ValueError(f"unknown role {role!r}")
-        if not password or "\x00" in password:
-            raise ValueError(f"empty or invalid password for {role}")
-        db.execute(f'alter role "{role}" login password {_quote_literal(password)}')
+        db.execute(role_password_sql(role, password))

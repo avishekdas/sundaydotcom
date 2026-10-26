@@ -1,0 +1,9 @@
+{
+  "$schema": "./node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "_comment": "Nightly mutation testing of the client reconciler (plan §1.2, M0B-12): score must stay >= 70 %.",
+  "testRunner": "vitest",
+  "mutate": ["src/sync/store.ts"],
+  "reporters": ["clear-text", "progress"],
+  "thresholds": { "high": 85, "low": 70, "break": 70 },
+  "coverageAnalysis": "perTest"
+}

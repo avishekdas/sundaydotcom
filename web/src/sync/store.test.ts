@@ -90,4 +90,88 @@ describe("BoardStore reconciler", () => {
       { numRuns: 300 },
     );
   });
+
+  // --- precise contract (mutation testing, M0B-12): notifications, replace rule, confirmations -----------------
+  it("notifies subscribers on every visible change and stops after unsubscribe", () => {
+    const s = new BoardStore();
+    let n = 0;
+    const off = s.subscribe(() => { n += 1; });
+    s.applyItems([base("1")]);
+    expect(n).toBe(1);
+    s.applyEvent({ item_id: "1", version: 2, values: { note: "a" } });
+    expect(n).toBe(2);
+    s.applyEvent({ item_id: "1", version: 2, values: { note: "a" } }); // duplicate without mutation id: no change
+    expect(n).toBe(2);
+    off();
+    s.applyEvent({ item_id: "1", version: 3, values: { note: "b" } });
+    expect(n).toBe(2);
+  });
+
+  it("full rows replace on equal or newer version only", () => {
+    const s = new BoardStore();
+    s.applyItems([base("1", 3, { note: "v3" })]);
+    s.applyItems([base("1", 3, { note: "v3-again" })]); // equal: idempotent replace
+    expect(s.server("1")?.values).toEqual({ note: "v3-again" });
+    s.applyItems([base("1", 2, { note: "old" })]); // older: ignored
+    expect(s.server("1")?.values).toEqual({ note: "v3-again" });
+    s.applyItems([base("1", 5, { note: "v5" })]);
+    expect(s.server("1")?.version).toBe(5);
+    expect(s.ids()).toEqual(["1"]);
+  });
+
+  it("ignores events for items that are not loaded", () => {
+    const stale: string[][] = [];
+    const s = new BoardStore((ids) => stale.push(ids));
+    s.applyEvent({ item_id: "9", version: 5, values: { note: "x" } });
+    expect(s.ids()).toEqual([]);
+    expect(stale).toEqual([]);
+    expect(s.view("9")).toBeUndefined();
+  });
+
+  it("reports a gap once until the full row arrives", () => {
+    const stale: string[][] = [];
+    const s = new BoardStore((ids) => stale.push(ids));
+    s.applyItems([base("1")]);
+    s.applyEvent({ item_id: "1", version: 4, values: {} });
+    s.applyEvent({ item_id: "1", version: 5, values: {} });
+    expect(stale).toEqual([["1"]]);
+    expect(s.stale()).toEqual(["1"]);
+    s.applyItems([base("1", 5)]);
+    s.applyEvent({ item_id: "1", version: 8, values: {} });
+    expect(stale).toEqual([["1"], ["1"]]);
+  });
+
+  it("confirms an optimistic edit even when its echo is a duplicate or arrives after a gap", () => {
+    const s = new BoardStore();
+    s.applyItems([base("1", 2)]);
+    s.setOptimistic("1", "note", "mine", "m1");
+    s.applyEvent({ item_id: "1", version: 2, values: { note: "mine" }, mutation_id: "m1" }); // duplicate echo
+    expect(s.view("1")?.pending).toEqual([]);
+    s.setOptimistic("1", "note", "again", "m2");
+    let n = 0;
+    s.subscribe(() => { n += 1; });
+    s.applyEvent({ item_id: "1", version: 9, values: { note: "again" }, mutation_id: "m2" }); // gap echo
+    expect(s.view("1")?.pending).toEqual([]);
+    expect(n).toBe(1); // the overlay removal is a visible change
+    s.applyEvent({ item_id: "1", version: 9, values: {}, mutation_id: "m-unknown" });
+    expect(n).toBe(1); // nothing to confirm: no notification
+  });
+
+  it("clears a column for null and for undefined", () => {
+    const s = new BoardStore();
+    s.applyItems([base("1", 1, { a: 1, b: 2, c: 3 })]);
+    s.applyEvent({ item_id: "1", version: 2, values: { a: null, b: undefined } });
+    expect(s.server("1")?.values).toEqual({ c: 3 });
+  });
+
+  it("rolls back only its own overlay and shows null overlays as cleared", () => {
+    const s = new BoardStore();
+    s.applyItems([base("1", 1, { note: "server" })]);
+    const undo1 = s.setOptimistic("1", "note", "first", "m1");
+    s.setOptimistic("1", "note", null, "m2");
+    expect(s.view("1")?.values).toEqual({});
+    undo1(); // superseded by m2: no effect
+    expect(s.view("1")?.pending).toEqual(["note"]);
+    expect(s.setOptimistic("404", "note", "x", "m3")).toBeTypeOf("function");
+  });
 });

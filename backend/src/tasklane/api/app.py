@@ -251,6 +251,14 @@ def _audit(kind: str, *, actor_id: int | None, target: dict[str, Any] | None = N
     )
 
 
+@app.get("/api/v1/health")
+def health() -> dict[str, Any]:
+    """Deploy smoke test (M0B-6): the pre-traffic hook invokes the new version with this route; one DB round trip.
+    Behind API Gateway it needs a JWT like every /api/v1 route; the direct invoke carries the origin secret."""
+    ok = deps().db.query("select 1 as one")[0]["one"] == 1
+    return {"ok": ok, "db": ok}
+
+
 @app.get("/api/v1/me")
 def me() -> dict[str, Any]:
     s = snapshot()

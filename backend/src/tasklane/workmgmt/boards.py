@@ -13,7 +13,15 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from tasklane.platform.db import Db, Json
-from tasklane.platform.mutation import Cte, Failure, Mutation, classify_failure, run
+from tasklane.platform.mutation import (
+    ASSIGN_GUARD,
+    EPOCH_GUARD,
+    Cte,
+    Failure,
+    Mutation,
+    classify_failure,
+    run,
+)
 from tasklane.platform.outbox import OutboxEvent
 from tasklane.schema.types import CodecError, codec_for
 
@@ -113,8 +121,18 @@ def _columns_of_item_board(db: Db, item_id: int) -> tuple[int | None, dict[str, 
 
 
 def set_values(
-    db: Db, actor: Actor, item_id: int, changes_in: dict[str, Any], *, mutation_id: str
+    db: Db,
+    actor: Actor,
+    item_id: int,
+    changes_in: dict[str, Any],
+    *,
+    mutation_id: str,
+    assign_column: str | None = None,
 ) -> WriteResult:
+    """``assign_column``: the People column of an "only edit assigned items" board (K3, B7.7); the row-level
+    guard runs inside the write (M0B-5). Boards choose it with the M2 permission-set settings."""
+    if assign_column is not None and not _SLUG.match(assign_column):
+        raise ValueError(f"bad assign column {assign_column!r}")
     board_id, cols = _columns_of_item_board(db, item_id)
     if board_id is None:
         return WriteResult(failure="not_found")
@@ -147,8 +165,10 @@ def set_values(
              set values = (i.values || :set::jsonb) - coalesce((select array_agg(k) from jsonb_array_elements_text(:del::jsonb) k), '{}'::text[]),
                  version = i.version + 1, updated_by_type = :atype, updated_by = :aid, updated_at = now()
       from pre
-      where i.id = pre.id and (select perm_epoch from tl.account) = :cached_epoch
-      returning i.id, i.board_id, i.version, pre.v as before_all, i.values as after_all""",
+      where i.id = pre.id and __EPOCH_GUARD__ and __ASSIGN_GUARD__
+      returning i.id, i.board_id, i.version, pre.v as before_all, i.values as after_all""".replace(
+                "__EPOCH_GUARD__", EPOCH_GUARD
+            ).replace("__ASSIGN_GUARD__", ASSIGN_GUARD),
         ),
         final="""select u.version, (select seq from c) as seq, (select payload::text from o) as payload from u
 union all
@@ -162,6 +182,8 @@ select null, null, null where not exists (select 1 from u)""",
             "atype": actor.actor_type,
             "aid": actor.user_id,
             "cached_epoch": actor.cached_epoch,
+            "assign_col": assign_column,
+            "me": Json([{"t": "u", "id": actor.user_id}]),
             "eid": event_id,
             "mid": mutation_id,
         },

@@ -25,6 +25,83 @@ class MutationRuleError(ValueError):
     """A mutation violates the single-statement CTE rules (arch 03 §3.5)."""
 
 
+# Rule 4 (SEC-3): the main write carries these guards verbatim, so a cached permission snapshot can never authorize
+# a write after a permission change, and edit_assigned is checked on the row itself (B7.7).
+EPOCH_GUARD = "(select perm_epoch from tl.account) = :cached_epoch"
+ASSIGN_GUARD = """(:assign_col::text is null
+             or i.values -> :assign_col -> 'p' @> :me::jsonb
+             or exists (select 1 from tl.items p where p.id = i.parent_item_id
+                        and p.values -> :assign_col -> 'p' @> :me::jsonb))"""
+
+_COMMENTS = re.compile(r"--[^\n]*|/\*.*?\*/", re.DOTALL)
+_LITERALS = re.compile(r"'(?:[^']|'')*'")
+_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_$.]*|[(),;]")
+_CLAUSE_END = {
+    "where",
+    "group",
+    "order",
+    "limit",
+    "returning",
+    "on",
+    "using",
+    "join",
+    "inner",
+    "left",
+    "right",
+    "full",
+    "cross",
+    "natural",
+    "union",
+    "except",
+    "intersect",
+    "having",
+    "window",
+    "set",
+    "values",
+    "select",
+    "for",
+    "lateral",
+}
+
+
+def _code(sql: str) -> str:
+    """SQL without comments and string literals: text there is never a table reference."""
+    return _LITERALS.sub("''", _COMMENTS.sub(" ", sql))
+
+
+def _relations(sql: str) -> set[str]:
+    """Relation names read through FROM / JOIN lists (``x``, ``tl.x``), aliases excluded."""
+    toks = [t.lower() for t in _TOKEN.findall(_code(sql))]
+    out: set[str] = set()
+    i = 0
+    while i < len(toks):
+        if toks[i] in ("from", "join") and i + 1 < len(toks):
+            j = i + 1
+            while j < len(toks) and toks[j] not in ("(", ")", ";") and toks[j] not in _CLAUSE_END:
+                out.add(toks[j])
+                j += 1
+                if j < len(toks) and toks[j] == "as":
+                    j += 1
+                if j < len(toks) and toks[j] not in (",", "(", ")", ";") and toks[j] not in _CLAUSE_END:
+                    j += 1  # alias
+                if j < len(toks) and toks[j] == ",":
+                    j += 1
+                    continue
+                break
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def _written(sql: str) -> str | None:
+    """The table a write CTE changes (``insert into`` / ``update`` / ``delete from``)."""
+    m = re.match(
+        r"\s*(?:insert\s+into|update|delete\s+from)\s+([a-z_][a-z0-9_.]*)", _code(sql), re.IGNORECASE
+    )
+    return m.group(1).lower() if m else None
+
+
 @dataclass(frozen=True)
 class Cte:
     name: str
@@ -48,8 +125,11 @@ class Mutation:
             raise MutationRuleError("the first CTE must take row locks with SELECT … FOR UPDATE")
         if main.name != "u":
             raise MutationRuleError("the main write CTE must be named u")
+        if " ".join(EPOCH_GUARD.split()) not in " ".join(_code(main.sql).split()):
+            raise MutationRuleError("the main write CTE must carry the epoch guard (SEC-3, rule 4)")
         self._ctes: list[Cte] = []
         self._dependents: set[str] = {"u"}  # u and every CTE that reads from it (transitively)
+        self._written: dict[str, str] = {}  # table → CTE that writes it (rule 3)
         self._params: dict[str, Param] = {}
         self._final = final
         self._merge(params or {})
@@ -69,20 +149,25 @@ class Mutation:
             raise MutationRuleError(f"duplicate CTE name {cte.name!r}")
         self._merge(cte.params)
         self._ctes.append(cte)
-
-    def _depends_on_u(self, sql: str) -> bool:
-        names = "|".join(sorted(self._dependents))
-        return bool(
-            re.search(
-                rf"\b(?:from|join)\s+(?:[^;()]*?,\s*)?(?:{names})\b|\b(?:{names})\s*\.", sql, re.IGNORECASE
-            )
-        )
+        target = _written(cte.sql)
+        if target and cte.name != self._ctes[0].name:
+            self._written.setdefault(target, cte.name)
 
     def add(self, cte: Cte) -> Mutation:
-        """Add a fragment; it must depend on ``u`` (directly or through a CTE that does)."""
-        if not self._depends_on_u(cte.sql):
-            msg = f"fragment {cte.name!r} must depend on the main write CTE u"
-            raise MutationRuleError(msg)
+        """Add a fragment. Rule 2: it reads ``u`` (or a CTE that does) as a relation. Rule 3: it reads no table
+        that ``u`` or another fragment writes (it would see the pre-statement snapshot, not their writes)."""
+        reads = _relations(cte.sql)
+        if not reads & self._dependents:
+            raise MutationRuleError(
+                f"fragment {cte.name!r} must depend on the main write CTE u (read it in FROM)"
+            )
+        own = _written(cte.sql)
+        for table in sorted(reads - {own} if own else reads):
+            if table in self._written:
+                raise MutationRuleError(
+                    f"fragment {cte.name!r} reads {table}, which is written by {self._written[table]!r} "
+                    "in the same statement (rule 3)"
+                )
         self._push(cte)
         self._dependents.add(cte.name)
         return self
@@ -159,12 +244,11 @@ def set_cell_value(
              version = i.version + 1, updated_by_type = :atype, updated_by = :aid, updated_at = now()
       from pre
       where i.id = pre.id
-        and (select perm_epoch from tl.account) = :cached_epoch
-        and (:assign_col::text is null
-             or i.values -> :assign_col -> 'p' @> :me::jsonb
-             or exists (select 1 from tl.items p where p.id = i.parent_item_id
-                        and p.values -> :assign_col -> 'p' @> :me::jsonb))
-      returning i.id, i.board_id, i.version, pre.v as before, i.values -> :col as after""",
+        and __EPOCH_GUARD__
+        and __ASSIGN_GUARD__
+      returning i.id, i.board_id, i.version, pre.v as before, i.values -> :col as after""".replace(
+                "__EPOCH_GUARD__", EPOCH_GUARD
+            ).replace("__ASSIGN_GUARD__", ASSIGN_GUARD),
         ),
         final="""select u.version, (select seq from c) as seq from u
 union all

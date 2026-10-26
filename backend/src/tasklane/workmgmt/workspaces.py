@@ -103,7 +103,7 @@ def _require_owner(db: Db, user_id: int, ws_id: int, *, include_deleted: bool = 
 
 
 def _bump_epoch(db: Db) -> None:
-    db.execute("update tl.account set perm_epoch = perm_epoch + 1")
+    db.query("select tl.bump_perm_epoch() as epoch")
 
 
 def _validate(body: dict[str, Any], *, partial: bool) -> dict[str, Any]:
