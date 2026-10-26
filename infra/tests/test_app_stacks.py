@@ -18,10 +18,28 @@ def test_user_pool_is_admin_invite_only_with_strong_passwords(app: cdk.App) -> N
             "UsernameAttributes": ["email"],
         },
     )
-    t.has_resource_properties(
-        "AWS::Cognito::UserPoolClient",
-        {"GenerateSecret": False, "ExplicitAuthFlows": Match.array_with(["ALLOW_USER_PASSWORD_AUTH"])},
-    )
+
+
+def test_no_browser_facing_password_client(app: cdk.App) -> None:
+    """The SPA signs in only through the auth proxy (07 §7.1, sub-story 3): no client allows direct password auth."""
+    t = template(app, "tasklane-dev-identity")
+    clients = [c["Properties"] for c in t.find_resources("AWS::Cognito::UserPoolClient").values()]
+    assert [c["ClientName"] for c in clients] == ["tasklane-dev-proxy"]
+    assert all("ALLOW_USER_PASSWORD_AUTH" not in c.get("ExplicitAuthFlows", []) for c in clients)
+
+
+def test_jwt_authorizer_trusts_only_the_proxy_client(app: cdk.App) -> None:
+    api = template(app, "tasklane-dev-api")
+    authorizer = next(iter(api.find_resources("AWS::ApiGatewayV2::Authorizer").values()))["Properties"]
+    audience = authorizer["JwtConfiguration"]["Audience"]
+    assert len(audience) == 1 and "Proxy" in str(audience[0])
+
+
+def test_spa_config_has_no_cognito_ids(app: cdk.App) -> None:
+    edge = next(s for s in app.node.children if isinstance(s, cdk.Stack) and s.stack_name == "tasklane-dev-edge")
+    cfg = edge.spa_config  # type: ignore[attr-defined]  # the dict shipped as config.json
+    assert set(cfg) == {"apiBase", "authBase", "wsPath", "stage"}
+    assert cfg["authBase"] == "/api/auth"
 
 
 def test_http_api_has_jwt_authorizer_and_api_lambda(app: cdk.App) -> None:
