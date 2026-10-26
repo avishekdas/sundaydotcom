@@ -188,3 +188,13 @@ def test_publish_failure_after_commit_still_returns_the_write(deps: Deps) -> Non
 def test_health_checks_the_database(deps: Deps) -> None:
     """M0B-6: the pre-traffic hook calls this on the new version (direct invoke, no authorizer)."""
     assert call(deps, "GET", "/api/v1/health", sub=None) == (200, {"ok": True, "db": True})
+
+
+def test_the_predeploy_hook_event_is_served_by_the_real_handler(deps: Deps) -> None:
+    """4148c99: the hook's hand-built event lacked requestContext.stage, Powertools raised, the gate blocked a good
+    deploy. Feed the hook's exact event to the real handler (with the origin secret check on)."""
+    from tasklane.workers.predeploy_hook import _event
+
+    deps.origin_secret = "hook-secret"
+    res = handle(_event("hook-secret"), deps)
+    assert res["statusCode"] == 200 and json.loads(res["body"]) == {"ok": True, "db": True}
