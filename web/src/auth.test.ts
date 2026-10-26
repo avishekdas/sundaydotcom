@@ -3,7 +3,7 @@
  * browser, access token in memory only, refresh token only in the HttpOnly cookie (never in web storage).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthError, refresh, signIn, signOut } from "./auth";
+import { AuthError, forgotPassword, refresh, resetPassword, signIn, signOut } from "./auth";
 
 type Reply = { status: number; body?: unknown; headers?: Record<string, string> };
 
@@ -85,5 +85,26 @@ describe("auth via /api/auth", () => {
     await signOut();
     expect(calls[0]!.url).toBe("/api/auth/sign-out");
     expect(calls[0]!.init.method).toBe("POST");
+  });
+
+  it("requests a reset code (always accepted)", async () => {
+    const calls = mockFetch({ status: 202 });
+    await forgotPassword("raj@example.com");
+    expect(calls[0]!.url).toBe("/api/auth/forgot");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({ email: "raj@example.com" });
+  });
+
+  it("resets the password, surfacing field errors", async () => {
+    let calls = mockFetch({ status: 204 });
+    await resetPassword("raj@example.com", "123456", "Brand-New-Password-7");
+    expect(calls[0]!.url).toBe("/api/auth/reset");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({
+      email: "raj@example.com", code: "123456", new_password: "Brand-New-Password-7",
+    });
+    calls = mockFetch({ status: 400, body: { error: { code: "validation_error", message: "Invalid request",
+                                                       fields: { code: "Invalid or expired code" } } } });
+    await expect(resetPassword("raj@example.com", "0", "x")).rejects.toMatchObject({
+      status: 400, fields: { code: "Invalid or expired code" },
+    });
   });
 });

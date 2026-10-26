@@ -162,3 +162,37 @@ def test_sign_out_everywhere_needs_a_session(deps: Deps) -> None:
     assert call(deps, "POST", "/api/v1/me/sign-out-everywhere")["statusCode"] == 401
     assert call(deps, "POST", "/api/v1/me/sign-out-everywhere", sub=ADA_SUB)["statusCode"] == 200
     assert call(deps, "POST", "/api/auth/refresh", cookies=[rt])["statusCode"] == 401
+
+
+def test_forgot_always_202(deps: Deps) -> None:
+    for email in ("a@example.com", "nobody@example.com"):
+        res = call(deps, "POST", "/api/auth/forgot", {"email": email})
+        assert res["statusCode"] == 202
+    assert call(deps, "POST", "/api/auth/forgot", {})["statusCode"] == 400
+
+
+@pytest.mark.ac("AC-K7-3")
+def test_reset_revokes_refresh_tokens_and_bumps_tokens_valid_after(deps: Deps) -> None:
+    rt = _rt_cookie(call(deps, "POST", "/api/auth/sign-in", {"email": "a@example.com", "password": GOOD}))
+    call(deps, "POST", "/api/auth/forgot", {"email": "a@example.com"})
+    assert deps.auth is not None
+    code = deps.auth.backend.last_code("a@example.com")  # type: ignore[attr-defined]
+    bad = call(
+        deps,
+        "POST",
+        "/api/auth/reset",
+        {"email": "a@example.com", "code": "000000", "new_password": "Brand-New-Password-7"},
+    )
+    assert bad["statusCode"] == 400 and bad["json"]["error"]["fields"] == {"code": "Invalid or expired code"}
+    ok = call(
+        deps,
+        "POST",
+        "/api/auth/reset",
+        {"email": "a@example.com", "code": code, "new_password": "Brand-New-Password-7"},
+    )
+    assert ok["statusCode"] == 204
+    assert call(deps, "POST", "/api/auth/refresh", cookies=[rt])["statusCode"] == 401
+    row = deps.db.query(
+        "select tokens_valid_after > 'epoch'::timestamptz as bumped from tl.users where id = 42"
+    )
+    assert row[0]["bumped"] is True

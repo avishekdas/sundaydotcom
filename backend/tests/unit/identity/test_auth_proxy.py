@@ -147,3 +147,55 @@ def _refused_refresh(proxy: AuthProxy, token: str) -> AuthRefused:
     with pytest.raises(AuthRefused) as e:
         proxy.refresh(token, C)
     return e.value
+
+
+# --- forgot / reset (K7.3, SEC-5, D-047) -------------------------------------------------------------------------
+
+
+def test_forgot_is_silent_for_unknown_emails_and_limited_per_email(world) -> None:  # type: ignore[no-untyped-def]
+    proxy, backend, _, _ = world
+    proxy.forgot("ghost@example.com", A)  # no error, no oracle
+    for _ in range(3):
+        proxy.forgot("raj@example.com", A)
+    assert backend.codes_sent("raj@example.com") == 3
+    proxy.forgot("raj@example.com", B)  # 4th within the hour: still "accepted", nothing sent (SEC-5)
+    assert backend.codes_sent("raj@example.com") == 3
+
+
+def test_forgot_is_rate_limited_per_ip(world) -> None:  # type: ignore[no-untyped-def]
+    proxy, *_ = world
+    for i in range(10):
+        proxy.forgot(f"x{i}@example.com", A)
+    with pytest.raises(AuthRefused) as e:
+        proxy.forgot("y@example.com", A)
+    assert e.value.code == "rate_limited"
+
+
+@pytest.mark.ac("AC-K7-3")
+def test_reset_revokes_every_refresh_token(world) -> None:  # type: ignore[no-untyped-def]
+    proxy, backend, _, _ = world
+    reset_for: list[str] = []
+    proxy.on_reset = reset_for.append
+    old = proxy.sign_in("raj@example.com", GOOD, A)
+    assert old.refresh_token
+    proxy.forgot("raj@example.com", A)
+    proxy.reset("raj@example.com", backend.last_code("raj@example.com"), "Brand-New-Password-7", A)
+    assert _refused_refresh(proxy, old.refresh_token).code == "unauthenticated"
+    assert reset_for == ["raj@example.com"]  # api bumps users.tokens_valid_after
+    assert proxy.sign_in("raj@example.com", "Brand-New-Password-7", B).access_token
+
+
+def test_reset_with_a_wrong_code_or_weak_password(world) -> None:  # type: ignore[no-untyped-def]
+    proxy, backend, _, _ = world
+    proxy.forgot("raj@example.com", A)
+    with pytest.raises(AuthRefused) as e:
+        proxy.reset("raj@example.com", "000000", "Brand-New-Password-7", A)
+    assert e.value.code == "validation_error" and e.value.fields == {"code": "Invalid or expired code"}
+    with pytest.raises(AuthRefused) as e:
+        proxy.reset(
+            "ghost@example.com", "000000", "Brand-New-Password-7", A
+        )  # same answer for unknown emails
+    assert e.value.fields == {"code": "Invalid or expired code"}
+    with pytest.raises(AuthRefused) as e:
+        proxy.reset("raj@example.com", backend.last_code("raj@example.com"), "short", A)
+    assert e.value.code == "validation_error" and "new_password" in (e.value.fields or {})

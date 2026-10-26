@@ -27,6 +27,16 @@ class Stub:
         self.calls.append(("revoke_token", kw))
         return {}
 
+    def forgot_password(self, **kw: Any) -> dict[str, Any]:
+        self.calls.append(("forgot_password", kw))
+        self._maybe_fail("ForgotPassword")
+        return {}
+
+    def confirm_forgot_password(self, **kw: Any) -> dict[str, Any]:
+        self.calls.append(("confirm_forgot_password", kw))
+        self._maybe_fail("ConfirmForgotPassword")
+        return {}
+
     def admin_user_global_sign_out(self, **kw: Any) -> dict[str, Any]:
         self.calls.append(("admin_user_global_sign_out", kw))
         return {}
@@ -69,3 +79,19 @@ def test_revoke_and_global_sign_out() -> None:
     a.global_sign_out("A@example.com")
     assert [c[0] for c in s.calls] == ["revoke_token", "admin_user_global_sign_out"]
     assert s.calls[1][1]["Username"] == "a@example.com"
+
+
+def test_forgot_swallows_unknown_users_and_reset_maps_errors() -> None:
+    from tasklane.identity.auth_backend import BadCode, WeakPassword
+
+    CognitoAuth(Stub(("UserNotFoundException", "x")), "p", "c").forgot("a@example.com")
+    with pytest.raises(BadCode):
+        CognitoAuth(Stub(("CodeMismatchException", "x")), "p", "c").confirm_reset("a@example.com", "1", "pw")
+    with pytest.raises(BadCode):
+        CognitoAuth(Stub(("ExpiredCodeException", "x")), "p", "c").confirm_reset("a@example.com", "1", "pw")
+    with pytest.raises(BadCode):
+        CognitoAuth(Stub(("UserNotFoundException", "x")), "p", "c").confirm_reset("a@example.com", "1", "pw")
+    with pytest.raises(WeakPassword):
+        CognitoAuth(Stub(("InvalidPasswordException", "Password did not conform")), "p", "c").confirm_reset(
+            "a@example.com", "1", "pw"
+        )
