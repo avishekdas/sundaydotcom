@@ -26,7 +26,7 @@ test.beforeAll(() => {
   expect(EMAIL && PASSWORD, "E2E_EMAIL / E2E_PASSWORD must be set").toBeTruthy();
 });
 
-test("M0b: A edits a status, B converges; B misses 10 edits while offline and converges", async ({ browser }) => {
+test("@ns:skeleton.converge M0b: A edits a status, B converges; B misses 10 edits while offline and converges", async ({ browser }) => {
   const a = await session(browser);
   const b = await session(browser);
 

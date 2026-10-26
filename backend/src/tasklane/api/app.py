@@ -201,6 +201,12 @@ def realtime_ticket() -> dict[str, Any]:
     return {"ticket": deps().registry.issue_ticket(int(u["id"])), "url": deps().ws_url}
 
 
+def route_inventory() -> list[tuple[str, str]]:
+    """(METHOD, path template) for every registered route — drives generated tests (north-star step 7, AC-K3-4)."""
+    routes = [*app._static_routes, *app._dynamic_routes]
+    return sorted({(r.method.upper(), r.path) for r in routes})
+
+
 def handle(event: dict[str, Any], d: Deps) -> dict[str, Any]:
     global _deps
     _deps = d

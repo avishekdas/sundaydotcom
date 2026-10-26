@@ -140,6 +140,7 @@ def state(c: Client) -> dict[str, dict[str, Any]]:
     }
 
 
+@pytest.mark.north_star("skeleton.converge")
 @pytest.mark.parametrize("seed", [1, 7, 42, 2026])
 def test_two_sessions_converge_and_reconnect_recovers_missed_edits(board_db: str, seed: int) -> None:
     bus = InProcessBus(chaos_seed=seed)

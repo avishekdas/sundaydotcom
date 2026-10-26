@@ -40,6 +40,7 @@ addopts = "-ra --strict-markers"
 markers = [
   "ac(id): acceptance criterion covered by this test",
   "integration: needs the embedded PostgreSQL",
+  "north_star(step): north-star step driven by this test (contracts/north_star.yaml)",
 ]
 
 [tool.ruff]

@@ -36,11 +36,11 @@ end of every milestone.
   call; commit/rollback take no `database`.
 - Dev workers (outbox sweeper, scheduler-tick) run hourly 08:00–19:00 New York time (D-037).
 - Local: `make dev` (embedded Postgres + real api handler + local WebSocket), `make check`.
-- The user's working copy is `~/tasklane` on their Mac; Claude commits there. **Claude handles `git push`** (user
-  request 2026-10-26): the Mac shell has no GitHub credentials, so bundle the new commits (`git bundle create
-  .git/push.bundle origin/main..main`), stage the bundle into the cloud workspace, fetch it into the clone
-  `/home/claude/sundaydotcom` (repo attached with push access), push `main`, then `git fetch` on the Mac and
-  delete the bundle. Hashes stay identical, so the Mac copy needs no reset.
+- The user's working copy is `~/tasklane` on their Mac. **Claude handles `git push`** (user request 2026-10-26).
+  Claude develops in the cloud clone `/home/claude/sundaydotcom` (repo attached with push access; the Mac's
+  `.venv` is macOS-only and can't run in the device VM), runs `make check`-equivalent gates there, pushes `main`,
+  then fast-forwards the Mac copy with `git pull --ff-only` through the device shell (fetch works without
+  credentials). A new session may need the user to approve push access again (add_repo with push).
 
 ## Status (update at each milestone)
 - M0a done (review fixes applied). M0b done (review `milestone-reviews/M0b.md`; final Tier B run 40249155724).

@@ -1,0 +1,116 @@
+# North-star sub-steps (requirements README "North-star scenario"; plan §1.1, §2 milestone map).
+# Each step: delivering milestone + drivers. `api` = Tier A (pytest `@pytest.mark.north_star("<id>")` under
+# backend/tests/system), `ui` = Tier B (Playwright test title containing `@ns:<id>` under e2e/).
+# At milestone kickoff the milestone's steps get their tests first, as strict expected failures
+# (pytest `xfail(strict=True, raises=AssertionError)`, Playwright `test.fail()`); the milestone is done when they pass.
+# Enforced by backend/tests/contract/test_north_star.py.
+current_milestone: M1
+
+steps:
+  - id: skeleton.converge
+    milestone: M0b
+    drivers: [api, ui]
+    what: two sessions on one board; A edits, B converges; B misses 10 edits offline, reconnects and converges
+
+  - id: 1a.sign_in_create_workspace
+    milestone: M1
+    drivers: [ui]
+    what: admin signs in with password + TOTP MFA (enrolling on first sign-in) and creates a workspace (step 1, K7, A2)
+  - id: 7.viewer_read_only
+    milestone: M1
+    drivers: [api]
+    what: generated over the current route inventory — a Viewer can call every read route and is refused (403) on every other route (step 7, K1.2)
+
+  - id: 4a.assign_owner
+    milestone: M2
+    drivers: [api]
+    what: rep assigns himself as the lead's Owner (People column)
+  - id: 4b.deal_value_close_date
+    milestone: M2
+    drivers: [api]
+    what: rep sets Deal Value = 40,000 and Expected Close Date = today
+
+  - id: f7.others_see_within_2s
+    milestone: M3
+    drivers: [ui]
+    what: an edit is visible to other viewers of the board within 2 s (F7, measured p95 in Tier B)
+
+  - id: m35.file_on_item
+    milestone: M3.5
+    drivers: [api]
+    what: a file is attached to an item and downloadable by viewers of the item only
+  - id: m35.csv_import_2000
+    milestone: M3.5
+    drivers: [api]
+    what: a 2,000-row CSV import lands as items visible on the board
+
+  - id: m4a.contact_deal_links
+    milestone: M4a
+    drivers: [api]
+    what: contact and deal linked through Connect columns with reflections
+  - id: m4a.forecast_inline_formula
+    milestone: M4a
+    drivers: [api]
+    what: Forecast Value formula evaluated inline on the deal
+
+  - id: m4b.contact_deals_value
+    milestone: M4b
+    drivers: [api]
+    what: the contact's mirror of linked deals' value updates after recompute
+  - id: m4b.partial_viewer
+    milestone: M4b
+    drivers: [api]
+    what: a viewer who cannot see every contributing board gets a per-viewer value marked partial (D-012/D-015)
+  - id: m4b.number_widget
+    milestone: M4b
+    drivers: [api]
+    what: a thin Number widget over Deals shows the visible total
+
+  - id: 2.status_default_new_lead
+    milestone: M5
+    drivers: [api]
+    what: a created lead's Status becomes New Lead within 5 s (automation 3)
+  - id: 4.qualify_creates_contact_deal
+    milestone: M5
+    drivers: [api]
+    what: Status = Qualified moves the lead and creates a linked Contact and Deal with Owner = lead Owner (automations 1, 2)
+  - id: 5.won_group_notify_project
+    milestone: M5
+    drivers: [api]
+    what: Stage = Won moves the deal to Closed Won, notifies subscribers, creates a linked Client Project (automations 8, 10, 11)
+
+  - id: 2.public_lead_form
+    milestone: M6
+    drivers: [ui]
+    what: a prospect submits the public lead form; the lead appears for every viewer of the Leads board within 2 s
+  - id: 5.kanban_drag_sets_stage
+    milestone: M6
+    drivers: [ui]
+    what: dragging a card across Kanban lanes sets Stage
+
+  - id: 1b.crm_template
+    milestone: M7
+    drivers: [ui]
+    what: admin creates the CRM workspace from the CRM template (L1)
+  - id: 3.log_call_last_interaction
+    milestone: M7
+    drivers: [ui]
+    what: a rep logs a call on the lead's timeline; it is an Activities item and Last interaction = today (account tz)
+  - id: 5.pipeline_view
+    milestone: M7
+    drivers: [ui]
+    what: the deal is moved to Won on the Pipeline Kanban view (L9)
+  - id: g6.automation5_real_t7
+    milestone: M7
+    drivers: [api]
+    what: catalog automation 5 runs on the real timeline trigger T7 (AC-G6-1b)
+
+  - id: 6.dashboard_deltas
+    milestone: M8
+    drivers: [ui]
+    what: Sales Dashboard deltas are exact (+40,000 target actual, month bar, leaderboard; Won count +1) — full north star 1–7
+
+  - id: full.north_star_dev
+    milestone: M9
+    drivers: [ui]
+    what: the full north star passes end to end on dev (prod at P-launch, D-031)
