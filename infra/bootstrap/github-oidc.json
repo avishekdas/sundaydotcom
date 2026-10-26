@@ -81,7 +81,10 @@
           "lambda:InvokeFunction",
           "lambda:GetFunction"
          ],
-         "Resource": "arn:aws:lambda:us-east-1:920824005451:function:tasklane-dev-migrate"
+         "Resource": [
+          "arn:aws:lambda:us-east-1:920824005451:function:tasklane-dev-migrate",
+          "arn:aws:lambda:us-east-1:920824005451:function:tasklane-dev-ip-probe"
+         ]
         },
         {
          "Effect": "Allow",

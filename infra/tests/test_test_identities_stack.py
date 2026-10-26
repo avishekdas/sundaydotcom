@@ -57,3 +57,23 @@ def test_no_test_identities_without_test_hooks(stage: object) -> None:
     build(a, stage)  # type: ignore[arg-type]
     names = [s.stack_name for s in a.node.children if isinstance(s, cdk.Stack)]
     assert not any(n.endswith("-test-identities") for n in names)
+
+
+def test_ip_probe_is_a_dev_only_test_hook(app: cdk.App) -> None:
+    """AC-K7-2 two-IP check (D-046): λ in the test-identities stack, DynamoDB rights on the counters table only."""
+    t = template(app, "tasklane-dev-test-identities")
+    t.has_resource_properties(
+        "AWS::Lambda::Function",
+        {"FunctionName": "tasklane-dev-ip-probe", "Handler": "tasklane.workers.ip_probe.handler",
+         "Environment": {"Variables": Match.object_like({"STAGE": "dev", "BASE_URL": Match.any_value(),
+                                                          "COUNTERS_TABLE": Match.any_value()})}},
+    )
+    ddb = set()
+    for pol in t.find_resources("AWS::IAM::Policy").values():
+        for st in pol["Properties"]["PolicyDocument"]["Statement"]:
+            a = st["Action"]
+            for x in a if isinstance(a, list) else [a]:
+                if x.startswith("dynamodb:"):
+                    ddb.add(x)
+                    assert st["Resource"] != "*"
+    assert ddb == {"dynamodb:Scan", "dynamodb:DeleteItem"}
