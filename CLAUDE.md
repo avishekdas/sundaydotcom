@@ -78,6 +78,10 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
 - Spike IaC is committed as templates under `spikes/*/infra` and deployed as throwaway stacks; delete after.
 
 ## Gotchas and learnings (keep adding)
+- **Hand-built Lambda events must be tested against the real handler**: the pre-traffic hook's event lacked
+  `requestContext.stage`, Powertools raised, and the gate blocked a good deploy (4148c99). Also: an alias update
+  starts the CodeDeploy deployment, so CodeDeploy's hook-invoke policy must exist first (alias depends on the
+  group role). Deploy failures show in the `deploy` check-run annotations (CloudFormation events).
 - **Never push a red commit while the previous green's `ci` is still running**: `ci` cancels in-progress runs on
   the branch, so the green is never deployed (happened with e048f14 → cancelled by 1bcba41). Wait for the green's
   `ci` to finish (deploy may keep running) before pushing the next red.

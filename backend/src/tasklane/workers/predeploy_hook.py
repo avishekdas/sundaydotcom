@@ -18,9 +18,10 @@ def _event(origin_secret: str) -> dict[str, Any]:
         "rawPath": "/api/v1/health",
         "rawQueryString": "",
         "headers": {"x-tl-origin": origin_secret},
-        "requestContext": {
-            "http": {"method": "GET", "path": "/api/v1/health"},
+        "requestContext": {  # the shape API Gateway sends (Powertools reads stage and http.method)
+            "http": {"method": "GET", "path": "/api/v1/health", "sourceIp": "127.0.0.1"},
             "requestId": "predeploy-hook",
+            "stage": "$default",
         },
         "isBase64Encoded": False,
     }

@@ -195,6 +195,7 @@ def test_the_predeploy_hook_event_is_served_by_the_real_handler(deps: Deps) -> N
     deploy. Feed the hook's exact event to the real handler (with the origin secret check on)."""
     from tasklane.workers.predeploy_hook import _event
 
-    deps.origin_secret = "hook-secret"
-    res = handle(_event("hook-secret"), deps)
+    origin = "hook-origin-value"
+    deps.origin_secret = origin
+    res = handle(_event(origin), deps)
     assert res["statusCode"] == 200 and json.loads(res["body"]) == {"ok": True, "db": True}
