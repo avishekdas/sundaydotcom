@@ -16,6 +16,9 @@ from tasklane.identity.viewer_ip import BadViewerAddress, viewer_ip_key
         ("[2001:db8:1:2:3:4:5:6]:5000", "2001:db8:1:2::/64"),
         ("[2001:db8:1:2:ffff::1]:443", "2001:db8:1:2::/64"),  # same /64 → same key
         ("[::ffff:203.0.113.5]:443", "203.0.113.5/32"),  # v4-mapped v6 counts as the v4 address
+        # CloudFront sends IPv6 without brackets: the port follows the last colon (seen on dev, 2026-10-26)
+        ("2001:db8:1:2:3:4:5:6:51234", "2001:db8:1:2::/64"),
+        ("2001:db8:1:2::7:443", "2001:db8:1:2::/64"),
     ],
 )
 def test_real_header_samples(header: str, key: str) -> None:
