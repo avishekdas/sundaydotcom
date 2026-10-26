@@ -14,6 +14,7 @@ from tasklane_infra.stacks.migrate import MigrateStack
 from tasklane_infra.stacks.network import NetworkStack
 from tasklane_infra.stacks.observability import ObservabilityStack
 from tasklane_infra.stacks.realtime import RealtimeStack
+from tasklane_infra.stacks.test_identities import TestIdentitiesStack
 from tasklane_infra.stacks.workers import WorkersStack
 
 
@@ -70,6 +71,19 @@ def build(app: cdk.App, stage: Stage) -> None:
     )
     for code in (rt, api):
         code.add_dependency(mig)
-    for s in (net, data, mig, msg, wrk, idn, rt, api, edge, obs):
+    stacks: list[cdk.Stack] = [net, data, mig, msg, wrk, idn, rt, api, edge, obs]
+    if stage.test_hooks:  # dev-only fixtures (D-049); build() already refuses test hooks for prod
+        tid = TestIdentitiesStack(
+            app,
+            name("test-identities"),
+            stack_name=name("test-identities"),
+            env=env,
+            stage=stage,
+            data=data,
+            identity=idn,
+        )
+        tid.add_dependency(mig)  # tl.users must exist (the pipeline migrates before code stacks)
+        stacks.append(tid)
+    for s in stacks:
         cdk.Tags.of(s).add("project", "tasklane")
         cdk.Tags.of(s).add("stage", stage.name)

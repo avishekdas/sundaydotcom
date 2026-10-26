@@ -21,12 +21,19 @@ jobs:
         with:
           role-to-assume: arn:aws:iam::920824005451:role/tasklane-gh-deploy-dev
           aws-region: us-east-1
-      - name: Test identity and URL
+      - name: Test identities and URL
+        # D-049: scripted users (admin, member, viewer, outsider) in one secret → E2E_<NAME>_EMAIL / _PASSWORD;
+        # the M0b skeleton spec signs in as the admin (E2E_EMAIL / E2E_PASSWORD).
         run: |
-          s=$(aws secretsmanager get-secret-value --secret-id tasklane/dev/test-users/a --query SecretString --output text)
-          echo "::add-mask::$(echo "$s" | jq -r .password)"
-          echo "E2E_EMAIL=$(echo "$s" | jq -r .email)" >> "$GITHUB_ENV"
-          echo "E2E_PASSWORD=$(echo "$s" | jq -r .password)" >> "$GITHUB_ENV"
+          s=$(aws secretsmanager get-secret-value --secret-id tasklane/dev/test-users/all --query SecretString --output text)
+          for n in admin member viewer outsider; do
+            p=$(echo "$s" | jq -r ".$n.password"); echo "::add-mask::$p"
+            u=$(echo "$n" | tr a-z A-Z)
+            echo "E2E_${u}_EMAIL=$(echo "$s" | jq -r ".$n.email")" >> "$GITHUB_ENV"
+            echo "E2E_${u}_PASSWORD=$p" >> "$GITHUB_ENV"
+          done
+          echo "E2E_EMAIL=$(echo "$s" | jq -r .admin.email)" >> "$GITHUB_ENV"
+          echo "E2E_PASSWORD=$(echo "$s" | jq -r .admin.password)" >> "$GITHUB_ENV"
           url=$(aws cloudformation describe-stacks --stack-name tasklane-dev-edge \
                 --query "Stacks[0].Outputs[?starts_with(OutputKey,'Url')].OutputValue" --output text)
           echo "BASE_URL=$url" >> "$GITHUB_ENV"

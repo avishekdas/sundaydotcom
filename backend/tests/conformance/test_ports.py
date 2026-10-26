@@ -89,7 +89,9 @@ def idp(request: pytest.FixtureRequest) -> Iterator[IdentityProvider]:
         return
     with mock_aws():
         c = boto3.client("cognito-idp", region_name="us-east-1")
-        pool = c.create_user_pool(PoolName="p", UsernameAttributes=["email"])["UserPool"]["Id"]
+        pool = c.create_user_pool(
+            PoolName="p", UsernameAttributes=["email"], UsernameConfiguration={"CaseSensitive": False}
+        )["UserPool"]["Id"]  # as deployed: sign_in_case_sensitive=False
         yield CognitoIdp(c, pool)
 
 
