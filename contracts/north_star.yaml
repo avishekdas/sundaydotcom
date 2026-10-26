@@ -15,7 +15,7 @@ steps:
   - id: 1a.sign_in_create_workspace
     milestone: M1
     drivers: [ui]
-    what: admin signs in with password + TOTP MFA (enrolling on first sign-in) and creates a workspace (step 1, K7, A2)
+    what: admin signs in with password through the auth proxy and creates a workspace (step 1, K7, A2; MFA deferred to M9, D-045)
   - id: 7.viewer_read_only
     milestone: M1
     drivers: [api]

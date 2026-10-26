@@ -76,6 +76,12 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
 - Spike IaC is committed as templates under `spikes/*/infra` and deployed as throwaway stacks; delete after.
 
 ## Gotchas and learnings (keep adding)
+- **Desktop (Mac) sessions** have no `/home/claude` cloud clone: work, commit and `git push` directly in `~/tasklane`
+  (push works with the Mac's git credentials). Gates locally need `JSII_RUNTIME_PACKAGE_CACHE=disabled` (jsii refuses
+  the group-writable `~/Library/Caches`) and a one-off `npm ci` in `web/`. The AWS MCP connector can drop mid-session
+  ("connection invalidated" → user reconnects it); the Mac has no AWS profile for account 920824005451.
+- The user prefers questions **one at a time**, each with the context needed to answer (AskUserQuestion has failed in
+  desktop sessions — ask in plain text with lettered options, recommendation first).
 - **Data API** (enforced by `StrictDataApiFake`): no array params (sets travel as JSON text); ints arrive as bigint
   (cast `::int`); results: jsonb/json as text, numeric/uuid as strings, timestamps as UTC strings; `interval`,
   `xid8`, `citext` results unsupported (cast to text); 64 KB row / 1 MiB response / 45 s statement; one statement
@@ -86,9 +92,8 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
   "Password attempts exceeded" and isn't counted; a success resets the counter. Under heavy parallel load locks
   once ran longer than the schedule → always retry with margin.
 - **HTTP API integration limit 30 s**, api λ timeout 29 s → never wait > ~20 s in-request (D-043).
-- **To verify before switching dev to required MFA**: whether Cognito allows changing an existing pool's MFA from
-  OPTIONAL to ON (it may only be settable at pool creation, which would mean a new pool — the current one is
-  RETAIN). Also re-check arch 07's "`require_mfa` toggles `SetUserPoolMfaConfig` ON↔OPTIONAL" against this.
+- MFA is **deferred to M9** (D-045): the dev pool stays OPTIONAL. If it is ever enabled: docs say `UpdateUserPool`
+  cannot set `ON` but `SetUserPoolMfaConfig` can on an existing pool — unverified on AWS; probe a throwaway pool first.
 - WAF runs **before** viewer-request CloudFront Functions (S-2a, D-029); WAF itself is deferred to M6 (D-041), so
   there is no CAPTCHA in M1–M5 (hence D-044).
 - Mutation builder rules (arch 03 §3.5) are still regex heuristics — M0B-5 (structural checks, edit_assigned guard
@@ -104,12 +109,12 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
     contract + M1 kickoff (steps `1a.sign_in_create_workspace` Tier B `e2e/m1-sign-in-workspace.spec.ts` and
     `7.viewer_read_only` Tier A — both expected failures); VisibleItems builder + rule-table harness
     (15/15 builder mutants killed).
-  - next (proposed, confirm with the user first): the **auth slice** delivered together so Tier B stays green —
-    auth proxy `/api/auth/*` (07 §7.1 incl. D-043/D-044, viewer IP parsing SEC-6, generic errors SEC-5,
-    refresh cookie, revocation), Identity stack (MFA required — see gotcha — plus an admin-auth proxy client),
-    SPA sign-in + TOTP enrolment, and **scripted test identities** (PE-17, M0B-24: a dev-only CDK custom resource
-    creating admin/member/viewer/outsider users with TOTP seeds in `tasklane/dev/test-users/<name>` and their
-    `tl.users` rows, so the deploy role needs no new permissions; refused for prod by a synth test).
+  - **auth slice decided (D-045…D-049, 2026-10-26)**: no MFA in M1 (AC-K7-1 → M9); sub-stories, each red/green with
+    Tier B green between: (1) scripted test identities — dev-only custom resource, admin/member/viewer/outsider in one
+    secret `tasklane/dev/test-users/all`, `tl.users` rows, refused for prod; then retire hand-made user `a`;
+    (2) auth proxy `/api/auth/*` (07 §7.1 incl. D-043/D-044, SEC-5/SEC-6, refresh cookie 30 d), AC-K7-2 in Tier A via
+    injected `CloudFront-Viewer-Address`; (3) SPA on the proxy (direct `USER_PASSWORD_AUTH` removed);
+    (4) forgot/reset (Cognito default email) + revocation, AC-K7-3. Two-IP dev probe λ goes into the M1 system test.
   - then: PermissionSnapshot + perm_epoch + tokens_valid_after, authz caps matrix (AC-K3-4) wired into every
     route via VisibleItems (flips step 7), bootstrap admin, users/invites/deactivate, roles, workspaces & members,
     board kinds & members, permission sets (no edit_assigned), audit events, left nav, profile/timezone;
