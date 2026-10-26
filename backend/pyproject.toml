@@ -40,6 +40,7 @@ testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
   "ac(id): acceptance criterion covered by this test",
+  "ac_partial(id): a building block of an acceptance criterion owned by a later milestone (not counted as coverage)",
   "integration: needs the embedded PostgreSQL",
   "north_star(step): north-star step driven by this test (contracts/north_star.yaml)",
 ]
