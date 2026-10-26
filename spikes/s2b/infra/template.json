@@ -1,0 +1,34 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "Spike S-2b (M1): throwaway Cognito pool mirroring tasklane-dev policy, client for ADMIN_USER_PASSWORD_AUTH. Delete after the run.",
+  "Resources": {
+    "Pool": {
+      "Type": "AWS::Cognito::UserPool",
+      "Properties": {
+        "UserPoolName": "tasklane-spike-s2b",
+        "UsernameAttributes": ["email"],
+        "UsernameConfiguration": {"CaseSensitive": false},
+        "AdminCreateUserConfig": {"AllowAdminCreateUserOnly": true},
+        "Policies": {"PasswordPolicy": {"MinimumLength": 12, "RequireLowercase": true, "RequireUppercase": true,
+                                        "RequireNumbers": true, "RequireSymbols": false, "TemporaryPasswordValidityDays": 3}},
+        "MfaConfiguration": "OPTIONAL",
+        "EnabledMfas": ["SOFTWARE_TOKEN_MFA"],
+        "UserPoolTags": {"purpose": "tasklane-spike-m1"}
+      }
+    },
+    "Client": {
+      "Type": "AWS::Cognito::UserPoolClient",
+      "Properties": {
+        "UserPoolId": {"Ref": "Pool"},
+        "ClientName": "tasklane-spike-s2b-proxy",
+        "GenerateSecret": false,
+        "ExplicitAuthFlows": ["ALLOW_ADMIN_USER_PASSWORD_AUTH", "ALLOW_REFRESH_TOKEN_AUTH"],
+        "PreventUserExistenceErrors": "ENABLED"
+      }
+    }
+  },
+  "Outputs": {
+    "PoolId": {"Value": {"Ref": "Pool"}},
+    "ClientId": {"Value": {"Ref": "Client"}}
+  }
+}

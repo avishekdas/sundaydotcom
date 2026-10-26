@@ -94,6 +94,7 @@ Owned ACs: none from requirements (platform). Contract tests: AR-2/DX-3 (reorder
 System test: two sessions, A edits status, B converges; B reconnects after 10 missed edits and converges (Tier A chaos + Tier B); canary rollback rehearsal on dev.
 
 ### M1 — Identity, workspaces, permission framework (3–4 weeks)
+**Status (2026-10-26): in progress.** S-2b done — PASS for AC-K7-2 (`spikes/s2b/REPORT.md`); D-022 tolerance kept, mechanics D-043, interim per-account closure D-044 (CAPTCHA in M6).
 **Carried from the M0b review:** M0B-5 Mutation builder: AST/structural fragment checks instead of regex, enforce rules 3–4, edit_assigned guard in `set_values` (with K3 edit_assigned in M2); M0B-6 synthetic canary traffic during the CodeDeploy window (or a pre-traffic hook running the smoke test); M0B-8 `tl_api_rw` default privileges narrowed per table, epoch/log writes via dedicated statements; M0B-10 no-transaction migrations: advisory lock + lock_timeout + run as migrator; M0B-12 `contracts/north_star.yaml` + xfail kickoff + nightly 500-seed chaos and mutation testing; M0B-14 role passwords via a SECURITY DEFINER function with parameters (not literal SQL) together with D-042 rotation; M0B-16 bad-deploy rollback runbook, runbook refresh, dashboard panels for fan-out/WS/DLQs; M0B-17 contract test "every function has an alarm + dashboard panel, every alarm can fire at its data cadence".
 Stories: **S-2b** (first); **test-identity fixtures** with TOTP-capable test users for Tier B (PE-17); **VisibleItems CTE builder + table-driven visibility harness** (rows added by every later milestone, PE-9); auth λ (sign-in, MFA setup, refresh cookie, forgot/reset, invite accept, sign-out, counters, generic errors, rate limits); bootstrap admin; account settings; users & invites, deactivate/reactivate (no ownership reassignment yet — DL-5); roles; workspaces & members; board kinds & members; permission sets except edit_assigned; PermissionSnapshot + epoch + tokens_valid_after; P1 audit events; left nav; profile & timezone. Breached-password check is **hardening → M9** unless S-2 shows it is cheap (DL-18).
 **Owned ACs (24):** see `ac-ownership.md`.
@@ -198,7 +199,7 @@ NFR-S* (security) gates: permission matrix + visibility metamorphic tests green;
 |---|---|---|
 | D-024 cost profile | before M0b starts | lean |
 | D-023 big-board latency target | S-1 exit | proposed value |
-| D-022 sign-in tolerance (35 s) | S-2 exit, before M1 | proposed value |
+| D-022 sign-in tolerance (35 s) | S-2 exit, before M1 | accepted; mechanics D-043/D-044 after S-2b |
 | Approve each milestone review | ≤ 2 working days after demo | next milestone's spikes/tests may start |
 
 ## 8. Execution conventions

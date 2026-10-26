@@ -40,5 +40,8 @@ end of every milestone.
 
 ## Status (update at each milestone)
 - M0a done (review fixes applied). M0b done (review `milestone-reviews/M0b.md`; final Tier B run 40249155724).
-- Next: **M1 — identity, workspaces, permission framework**, starting with spike S-2b (Cognito interplay), then
-  the items under "Carried from the M0b review" in the plan's M1 section.
+- M1 in progress: S-2b done (D-043 retry contract, D-044 interim account closure). Next M1 stories: test-identity
+  fixtures (PE-17), VisibleItems builder + harness, auth λ / proxy, then the rest of the plan's M1 list and the
+  "Carried from the M0b review" items.
+- AWS MCP sandbox for ad-hoc AWS work: no classes, no `logging`, no underscore attributes; runs > ~1 min become
+  tasks (poll get_tasks; parse large results from the saved file).

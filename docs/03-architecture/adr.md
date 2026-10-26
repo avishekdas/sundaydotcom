@@ -76,4 +76,4 @@ Reports: `spikes/s1`, `s2a`, `s3`, `s4` `/REPORT.md` (indexed in `03-architectur
 | ADR-012 | S-3 cold start | **PASS** — cold ≤ ≈ 1.15 s, warm ≈ 13 ms | No SnapStart / provisioned concurrency for now |
 | ADR-009 | S-4 recompute & per-viewer | **PASS** — per-viewer fold 227 ms p95 (join 293 ms) on 20k; 1,000 bulk edits recomputed in 160 ms; drift 0 | Partial aggregates + fold kept; no wider materialization needed |
 | 07 §7.4 (SEC-7) | S-2a WAF challenge | **PASS with change** — WAF runs before viewer-request CloudFront Functions, so the Function stripped WAF's own header | Forged `x-amzn-waf-*` headers blocked by a priority-0 WAF rule (D-029); Bot Control Common level suffices; SDK `getToken()` path re-verified in M6 |
-| ADR-013 | S-2b Cognito interplay | pending — first story of M1 | D-022 confirmed or adjusted before K7 ACs |
+| ADR-013 | S-2b Cognito interplay (M1, 2026-10-26) | **PASS** for AC-K7-2 (IP B in 2.7 s); lock 2^(n−5) s, per user only | D-022 tolerance kept; mechanics D-043 (in-request ≤ 20 s + SPA retry, HTTP API 30 s limit), interim account cap D-044 |
