@@ -14,8 +14,11 @@ from aws_lambda_powertools.event_handler import APIGatewayHttpResolver, Response
 from aws_lambda_powertools.shared.cookies import Cookie, SameSite
 
 from tasklane.collab.realtime import DynamoRegistry, Registry
+from tasklane.identity import users
+from tasklane.identity.auth_backend import NewPasswordRequired
 from tasklane.identity.auth_proxy import AuthProxy, AuthRefused
 from tasklane.identity.authz import AccountCap, Cap
+from tasklane.identity.idp import IdentityProvider
 from tasklane.identity.snapshot import PermissionSnapshot, SnapshotCache
 from tasklane.identity.viewer_ip import BadViewerAddress, viewer_ip_key
 from tasklane.platform.clock import Clock, SystemClock
@@ -32,6 +35,7 @@ STATUS = {
     "conflict": 409,
     "gone": 410,
     "rate_limited": 429,
+    "invite_expired": 401,
     "stale_epoch": 409,
 }
 
@@ -46,7 +50,10 @@ class Deps:
     bus_name: str
     auth: AuthProxy | None = None  # auth proxy (07 §7.1); None where sign-in is not served (devserver)
     origin_secret: str | None = None  # CloudFront `x-tl-origin` (07 §7.4, D-050); None disables the check
-    snapshots: SnapshotCache = field(default_factory=SnapshotCache)  # per Lambda instance, ≤ 30 s (07 §7.2)
+    snapshots: SnapshotCache = field(default_factory=SnapshotCache)
+    idp: IdentityProvider | None = (
+        None  # admin side of Cognito (invites, deactivation)  # per Lambda instance, ≤ 30 s (07 §7.2)
+    )
 
 
 class ApiError(Exception):
@@ -120,6 +127,21 @@ def _ws_gone(_e: workspaces.Gone) -> Response[str]:
 
 @app.exception_handler(workspaces.Invalid)  # type: ignore[untyped-decorator]
 def _ws_invalid(e: workspaces.Invalid) -> Response[str]:
+    return _error("validation_error", "Invalid request", e.fields)
+
+
+@app.exception_handler(users.NotFound)  # type: ignore[untyped-decorator]
+def _user_not_found(_e: users.NotFound) -> Response[str]:
+    return _error("not_found", "Not found")
+
+
+@app.exception_handler(users.Conflict)  # type: ignore[untyped-decorator]
+def _user_conflict(e: users.Conflict) -> Response[str]:
+    return _error("conflict", str(e))
+
+
+@app.exception_handler(users.Invalid)  # type: ignore[untyped-decorator]
+def _user_invalid(e: users.Invalid) -> Response[str]:
     return _error("validation_error", "Invalid request", e.fields)
 
 
@@ -299,11 +321,54 @@ def realtime_ticket() -> dict[str, Any]:
     return {"ticket": deps().registry.issue_ticket(int(u["id"])), "url": deps().ws_url}
 
 
-# --- workspaces and the left nav (A2, A4, K2) ---------------------------------------------------------------------
-
-
 def _json(status: int, doc: Any) -> Response[str]:
     return Response(status_code=status, content_type=content_types.APPLICATION_JSON, body=json.dumps(doc))
+
+
+# --- users, invites and roles (F1, F2, K1): Admin only ------------------------------------------------------------
+
+
+def _admin() -> IdentityProvider:
+    if AccountCap.MANAGE_ACCOUNT not in snapshot().account_caps():
+        raise ApiError("forbidden", "You do not have permission to do this")
+    idp = deps().idp
+    if idp is None:
+        raise ApiError("not_found", "Not found")
+    return idp
+
+
+@app.get("/api/v1/users")
+def list_users() -> dict[str, Any]:
+    _admin()
+    return {"users": users.list_users(deps().db)}
+
+
+@app.post("/api/v1/users")
+def invite_user() -> Response[str]:
+    idp = _admin()
+    return _json(201, users.invite(deps().db, idp, _body()))
+
+
+@app.patch("/api/v1/users/<user_id>")
+def update_user(user_id: str) -> dict[str, Any]:
+    idp = _admin()
+    return users.update(deps().db, idp, _int(user_id), _body())
+
+
+@app.delete("/api/v1/users/<user_id>")
+def revoke_invite(user_id: str) -> Response[str]:
+    idp = _admin()
+    users.revoke_invite(deps().db, idp, _int(user_id))
+    return Response(status_code=204, body="")
+
+
+@app.post("/api/v1/users/<user_id>/resend-invite")
+def resend_invite(user_id: str) -> dict[str, Any]:
+    idp = _admin()
+    return users.resend_invite(deps().db, idp, _int(user_id))
+
+
+# --- workspaces and the left nav (A2, A4, K2) ---------------------------------------------------------------------
 
 
 @app.get("/api/v1/nav")
@@ -418,13 +483,28 @@ def auth_sign_in() -> Response[str]:
     if fields:
         raise ApiError("validation_error", "Email and password are required", fields)
     assert isinstance(email, str) and isinstance(password, str)
-    t = _auth().sign_in(email, password, _viewer_ip())
+    try:
+        t = _auth().sign_in(email, password, _viewer_ip())
+    except NewPasswordRequired as challenge:  # invitee's first sign-in (F1.2): no session yet
+        return _json(200, {"challenge": "new_password_required", "session": challenge.session})
+    return _session_response(t)
+
+
+def _session_response(t: Any) -> Response[str]:
     return Response(
         status_code=200,
         content_type=content_types.APPLICATION_JSON,
         body=json.dumps({"access_token": t.access_token, "expires_in": t.expires_in, "token_type": "Bearer"}),
         cookies=[_refresh_cookie(t.refresh_token or "", REFRESH_MAX_AGE_S)],
     )
+
+
+@app.post("/api/auth/accept-invite")
+def auth_accept_invite() -> Response[str]:
+    email, session, new_password = _required(_body(), "email", "session", "new_password")
+    t = _auth().complete_new_password(email, session, new_password, _viewer_ip())
+    users.activate_invitee(deps().db, email)
+    return _session_response(t)
 
 
 @app.post("/api/auth/refresh")
@@ -508,6 +588,7 @@ def handle(event: dict[str, Any], d: Deps) -> dict[str, Any]:
 @cache
 def _env_deps() -> Deps:
     from tasklane.identity.auth_backend import CognitoAuth
+    from tasklane.identity.idp import CognitoIdp
     from tasklane.platform.aws_env import boto, db_from_env
     from tasklane.platform.counters import DynamoCounters
 
@@ -517,6 +598,7 @@ def _env_deps() -> Deps:
         DynamoCounters(boto("dynamodb"), os.environ["COUNTERS_TABLE"], clock),
         clock,
     )
+    idp = CognitoIdp(boto("cognito-idp"), os.environ["USER_POOL_ID"])
     return Deps(
         db=db_from_env(),
         publisher=EventBridgePublisher(boto("events")),
@@ -526,6 +608,7 @@ def _env_deps() -> Deps:
         bus_name=os.environ["EVENT_BUS_NAME"],
         auth=auth,
         origin_secret=os.environ["ORIGIN_SECRET"],
+        idp=idp,
     )
 
 

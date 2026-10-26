@@ -2,6 +2,7 @@ import type { BoardApi, Schema, Socket, SocketFactory } from "./sync/engine";
 import type { ServerItem } from "./sync/types";
 import type { AppConfig } from "./config";
 import type { NavTree } from "./ui/LeftNav";
+import type { AdminUser, Role } from "./ui/UsersAdmin";
 
 export class ApiError extends Error {
   constructor(readonly status: number, readonly code: string, message: string, readonly fields?: Record<string, string>) {
@@ -30,6 +31,15 @@ export class Api implements BoardApi {
     return this.call<{ id: string; name: string; email: string; role: string; capabilities: string[] }>("GET", "/me");
   }
   nav() { return this.call<NavTree>("GET", "/nav"); }
+  async listUsers() { return (await this.call<{ users: AdminUser[] }>("GET", "/users")).users; }
+  inviteUser(email: string, name: string, role: Role) {
+    return this.call<AdminUser>("POST", "/users", { email, name, role });
+  }
+  updateUser(id: string, patch: Partial<Pick<AdminUser, "role" | "status">>) {
+    return this.call<AdminUser>("PATCH", `/users/${id}`, patch);
+  }
+  async resendInvite(id: string) { await this.call<unknown>("POST", `/users/${id}/resend-invite`); }
+  async revokeInvite(id: string) { await this.call<unknown>("DELETE", `/users/${id}`); }
   createWorkspace(name: string, kind: "open" | "closed") {
     return this.call<{ id: string; name: string; kind: string }>("POST", "/workspaces", { name, kind });
   }

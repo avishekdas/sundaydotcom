@@ -113,7 +113,7 @@ def test_new_password_challenge_and_expired_invite() -> None:
     assert e.value.session == "sess-1"
     s = Challenge()
     t = CognitoAuth(s, "p", "c").complete_new_password("A@example.com", "sess-1", "Brand-New-Password-7")
-    assert t.refresh_token == "rt"
+    assert (t.access_token, t.refresh_token) == ("at", "rt")
     kw = s.calls[0][1]
     assert (
         kw["ChallengeName"] == "NEW_PASSWORD_REQUIRED"

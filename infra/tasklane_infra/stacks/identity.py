@@ -44,11 +44,18 @@ class IdentityStack(cdk.Stack):
                 require_lowercase=True,
                 require_uppercase=True,
                 require_symbols=False,
-                temp_password_validity=cdk.Duration.days(3),
+                temp_password_validity=cdk.Duration.days(7),  # F1.1: invitations valid 7 days
             ),
             mfa=cognito.Mfa.OPTIONAL,
             mfa_second_factor=cognito.MfaSecondFactor(otp=True, sms=False),
             account_recovery=cognito.AccountRecovery.EMAIL_ONLY,
+            user_invitation=cognito.UserInvitationConfig(  # D-054: Cognito sends the invite
+                email_subject="You're invited to Tasklane",
+                email_body=(
+                    "You have been invited to Tasklane.<br><br>Sign in with your email {username} and the temporary "
+                    "password <b>{####}</b>, then choose your own password. The invitation expires in 7 days."
+                ),
+            ),
             removal_policy=cdk.RemovalPolicy.RETAIN,
         )
         # Auth proxy client (ADR-013): admin password auth from the api λ only; 30-day refresh (D-048), revocable

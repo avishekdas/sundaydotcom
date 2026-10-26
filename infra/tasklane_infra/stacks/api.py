@@ -70,7 +70,17 @@ class ApiStack(cdk.Stack):
         # on this pool only. RevokeToken needs no IAM permission (it takes the client id).
         fn.add_to_role_policy(
             cdk.aws_iam.PolicyStatement(
-                actions=["cognito-idp:AdminInitiateAuth", "cognito-idp:AdminUserGlobalSignOut"],
+                actions=[
+                    "cognito-idp:AdminInitiateAuth",
+                    "cognito-idp:AdminRespondToAuthChallenge",
+                    "cognito-idp:AdminUserGlobalSignOut",
+                    # user administration (F1, D-054): invite, revoke, deactivate / reactivate, lookup
+                    "cognito-idp:AdminCreateUser",
+                    "cognito-idp:AdminDeleteUser",
+                    "cognito-idp:AdminDisableUser",
+                    "cognito-idp:AdminEnableUser",
+                    "cognito-idp:AdminGetUser",
+                ],
                 resources=[identity.pool.user_pool_arn],
             )
         )

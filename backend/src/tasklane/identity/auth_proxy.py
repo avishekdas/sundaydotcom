@@ -22,7 +22,9 @@ from tasklane.identity.auth_backend import (
     BadCode,
     BadCredentials,
     InvalidRefresh,
+    InviteExpired,
     Locked,
+    NewPasswordRequired,
     Tokens,
     WeakPassword,
 )
@@ -37,12 +39,13 @@ LOCK_MARGIN_S = 0.5
 MAX_RETRIES = 2
 REFRESH_LIMIT, REFRESH_WINDOW_S = 60, 60
 FORGOT_PER_EMAIL, FORGOT_PER_IP, RESET_PER_IP, HOUR_S = 3, 10, 10, 3600
+CHALLENGE_PER_IP = 20  # SEC-5
 GENERIC = "Email or password is incorrect"
 
 
 @dataclass
 class AuthRefused(Exception):
-    code: str  # unauthenticated | rate_limited | validation_error
+    code: str  # unauthenticated | rate_limited | validation_error | invite_expired
     message: str
     retry_after_s: int | None = None
     fields: dict[str, str] | None = None
@@ -95,6 +98,14 @@ class AuthProxy:
                     self._log("auth.account_closed")
                 lock = self._expected_lock(account)
                 raise AuthRefused("unauthenticated", GENERIC, math.ceil(lock) if lock else None) from None
+            except NewPasswordRequired:
+                # a correct temporary password: no failure counted; the caller must set a new password (F1.2)
+                self._k.clear(pair)
+                raise
+            except InviteExpired:
+                raise AuthRefused(
+                    "invite_expired", "This invitation has expired. Ask an admin to send it again."
+                ) from None
             except Locked:
                 wait = self._expected_lock(account) + LOCK_MARGIN_S
                 if attempt < MAX_RETRIES and waited + wait <= WAIT_BUDGET_S:
@@ -165,3 +176,14 @@ class AuthProxy:
         hook = on_reset or self.on_reset
         if hook:
             hook(email)
+
+    def complete_new_password(self, email: str, session: str, new_password: str, ip: str) -> Tokens:
+        """Invite acceptance (F1.2): set the first password with the session of the NEW_PASSWORD_REQUIRED step."""
+        self._per_ip(f"challenge#ip#{ip}", CHALLENGE_PER_IP)
+        try:
+            return self._b.complete_new_password(email.strip().lower(), session, new_password)
+        except WeakPassword as e:
+            msg = str(e) or "Password does not meet the policy"
+            raise AuthRefused("validation_error", "Invalid request", fields={"new_password": msg}) from None
+        except BadCredentials:
+            raise AuthRefused("unauthenticated", "This step has expired; sign in again") from None

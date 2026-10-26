@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
 import { Api } from "../api";
-import { AuthError, forgotPassword, refresh, resetPassword, signIn, signOut, type Session } from "../auth";
+import { acceptInvite, AuthError, forgotPassword, refresh, resetPassword, signIn, signOut, type Session } from "../auth";
 import { loadConfig, type AppConfig } from "../config";
 import { BoardView } from "./BoardView";
 import { LeftNav } from "./LeftNav";
+import { UsersAdmin } from "./UsersAdmin";
 
 const DEFAULT_BOARD = "10";
 
@@ -12,6 +13,7 @@ export function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [booting, setBooting] = useState(true);
+  const [invite, setInvite] = useState<{ email: string; session: string } | null>(null);
 
   useEffect(() => {
     loadConfig()
@@ -29,10 +31,20 @@ export function App() {
   if (!session && new URLSearchParams(location.search).has("reset")) {
     return <ResetPassword onDone={() => { history.replaceState(null, "", location.pathname); setError("Password changed — sign in with your new password."); setBooting(false); }} />;
   }
+  if (!session && invite) {
+    return <SetPassword email={invite.email} onSubmit={async (pw) => {
+      setSession(await acceptInvite(invite.email, invite.session, pw));
+      setInvite(null);
+    }} />;
+  }
   if (!session) {
     return <SignIn onSubmit={async (email, pw, onRetry) => {
       setError(null);
-      try { setSession(await signIn(email, pw, { onRetry })); } catch (e) { setError((e as Error).message); }
+      try {
+        const r = await signIn(email, pw, { onRetry });
+        if ("challenge" in r) setInvite({ email, session: r.session });
+        else setSession(r);
+      } catch (e) { setError((e as Error).message); }
     }} error={error} />;
   }
 
@@ -53,18 +65,24 @@ function Shell({ cfg, token, onSignOut }: { cfg: AppConfig; token: () => Promise
   const [api] = useState(() => new Api(cfg, token));
   const [boardId, setBoardId] = useState(() => new URLSearchParams(location.search).get("board") ?? DEFAULT_BOARD);
   const [caps, setCaps] = useState<string[]>([]);
+  const [page, setPage] = useState<"board" | "users">(() => (new URLSearchParams(location.search).get("page") === "users" ? "users" : "board"));
   useEffect(() => { api.me().then((m) => setCaps(m.capabilities ?? [])).catch(() => setCaps([])); }, [api]);
-  const open = (id: string) => { history.pushState(null, "", `?board=${id}`); setBoardId(id); };
+  const open = (id: string) => { history.pushState(null, "", `?board=${id}`); setBoardId(id); setPage("board"); };
   return (
     <div className="shell">
       <header className="topbar">
         <span className="brand">Tasklane</span>
         <span className="stage">{cfg.stage}</span>
+        {caps.includes("manage_account") && (
+          <button className="link" data-testid="nav-users" onClick={() => { history.pushState(null, "", "?page=users"); setPage("users"); }}>Users</button>
+        )}
         <button className="link" data-testid="sign-out" onClick={onSignOut}>Sign out</button>
       </header>
       <div className="body">
         <LeftNav api={api} canCreateWorkspace={caps.includes("create_workspace")} onOpenBoard={open} currentBoard={boardId} />
-        <main className="content"><BoardView key={boardId} api={api} boardId={boardId} stage={cfg.stage} /></main>
+        <main className="content">
+          {page === "users" ? <UsersAdmin api={api} /> : <BoardView key={boardId} api={api} boardId={boardId} stage={cfg.stage} />}
+        </main>
       </div>
     </div>
   );
@@ -129,6 +147,28 @@ function ResetPassword({ onDone }: { onDone: () => void }) {
       <label>New password<input data-testid="reset-password" type="password" autoComplete="new-password" minLength={12} value={pw} onChange={(e) => setPw(e.target.value)} required /></label>
       {error && <p className="error" role="alert">{error}</p>}
       <button data-testid="reset-submit" disabled={busy}>Set new password</button>
+    </form>
+  );
+}
+
+/** Invitation acceptance (F1.2): the invitee replaces the emailed temporary password. */
+function SetPassword({ email, onSubmit }: { email: string; onSubmit: (pw: string) => Promise<void> }) {
+  const [pw, setPw] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  return (
+    <form className="signin" onSubmit={async (e) => {
+      e.preventDefault(); setBusy(true); setError(null);
+      try { await onSubmit(pw); } catch (err) {
+        const f = err instanceof AuthError ? err.fields : undefined;
+        setError(f ? Object.values(f).join(" ") : (err as Error).message);
+      } finally { setBusy(false); }
+    }}>
+      <h1>Welcome to Tasklane</h1>
+      <p className="muted">Choose a password for {email}: at least 12 characters with upper and lower case and a digit.</p>
+      <label>New password<input data-testid="new-password" type="password" autoComplete="new-password" minLength={12} value={pw} onChange={(e) => setPw(e.target.value)} required /></label>
+      {error && <p className="error" role="alert">{error}</p>}
+      <button data-testid="set-password" disabled={busy}>Set password</button>
     </form>
   );
 }

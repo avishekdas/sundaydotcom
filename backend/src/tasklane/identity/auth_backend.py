@@ -5,6 +5,7 @@ counted, success resets)."""
 from __future__ import annotations
 
 import secrets
+import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Protocol
@@ -37,6 +38,18 @@ class BadCode(Exception):
     """Wrong, expired or over-used reset code — also used for unknown emails (SEC-5)."""
 
 
+class NewPasswordRequired(Exception):
+    """First sign-in of an invitee (K7.6, F1.2): Cognito's NEW_PASSWORD_REQUIRED challenge."""
+
+    def __init__(self, session: str) -> None:
+        super().__init__("new password required")
+        self.session = session
+
+
+class InviteExpired(Exception):
+    """The invitation's temporary password is older than its validity (F1.1: 7 days)."""
+
+
 class WeakPassword(Exception):
     """The new password breaks the pool policy (≥ 12 chars, upper, lower, digit)."""
 
@@ -48,6 +61,10 @@ class AuthBackend(Protocol):
     def global_sign_out(self, email: str) -> None: ...
     def forgot(self, email: str) -> None: ...
     def confirm_reset(self, email: str, code: str, new_password: str) -> None: ...
+    def complete_new_password(self, email: str, session: str, new_password: str) -> Tokens: ...
+
+
+INVITE_VALID = timedelta(days=7)
 
 
 def _code(e: ClientError) -> tuple[str, str]:
@@ -71,12 +88,35 @@ class CognitoAuth:
             code, msg = _code(e)
             if code == "NotAuthorizedException" and "attempts exceeded" in msg.lower():
                 raise Locked from None
+            if code == "NotAuthorizedException" and "temporary password has expired" in msg.lower():
+                raise InviteExpired from None
             if code in {"NotAuthorizedException", "UserNotFoundException", "PasswordResetRequiredException"}:
                 raise BadCredentials from None
             raise
+        if res.get("ChallengeName") == "NEW_PASSWORD_REQUIRED":
+            raise NewPasswordRequired(str(res["Session"]))
         result = res.get("AuthenticationResult")
-        if not result:  # a challenge (e.g. NEW_PASSWORD_REQUIRED for invitees) is handled by later stories
+        if not result:  # other challenges (MFA) are not enabled (D-045)
             raise BadCredentials
+        return Tokens(str(result["AccessToken"]), int(result["ExpiresIn"]), result.get("RefreshToken"))
+
+    def complete_new_password(self, email: str, session: str, new_password: str) -> Tokens:
+        try:
+            res = self._c.admin_respond_to_auth_challenge(
+                UserPoolId=self._pool,
+                ClientId=self._client_id,
+                ChallengeName="NEW_PASSWORD_REQUIRED",
+                Session=session,
+                ChallengeResponses={"USERNAME": email.strip().lower(), "NEW_PASSWORD": new_password},
+            )
+        except ClientError as e:
+            name, msg = _code(e)
+            if name == "InvalidPasswordException":
+                raise WeakPassword(msg) from None
+            if name in {"NotAuthorizedException", "CodeMismatchException", "ExpiredCodeException"}:
+                raise BadCredentials from None
+            raise
+        result = res["AuthenticationResult"]
         return Tokens(str(result["AccessToken"]), int(result["ExpiresIn"]), result.get("RefreshToken"))
 
     def refresh(self, refresh_token: str) -> Tokens:
@@ -143,15 +183,23 @@ class _User:
     failures: int = 0
     locked_until: datetime | None = None
     tokens: set[str] = field(default_factory=set)
+    sub: str = field(default_factory=lambda: str(uuid.uuid4()))
+    enabled: bool = True
+    invited_at: datetime | None = None  # set while the temporary password is pending (FORCE_CHANGE_PASSWORD)
+    invites: int = 0
 
 
 class FakeAuthBackend:
+    """Fake Cognito for Tier A: the sign-in side (AuthBackend) and the admin side (IdentityProvider) share one
+    user store, so invites can be accepted end to end."""
+
     def __init__(self, clock: Clock) -> None:
         self._clock = clock
         self._users: dict[str, _User] = {}
         self._refresh: dict[str, str] = {}
         self._codes: dict[str, str] = {}
         self._sent: dict[str, int] = {}
+        self._sessions: dict[str, str] = {}
         self.calls = 0
 
     def add_user(self, email: str, password: str) -> None:
@@ -164,11 +212,18 @@ class FakeAuthBackend:
     def sign_in(self, email: str, password: str) -> Tokens:
         self.calls += 1
         user = self._users.get(email.strip().lower())
-        if user is None:
+        if user is None or not user.enabled:
             raise BadCredentials
         now = self._clock.now()
         if user.locked_until and now < user.locked_until:
             raise Locked
+        if user.invited_at is not None:
+            if now - user.invited_at > INVITE_VALID:
+                raise InviteExpired
+            if password == user.password:
+                session = secrets.token_urlsafe(16)
+                self._sessions[session] = email.strip().lower()
+                raise NewPasswordRequired(session)
         if password != user.password:
             user.failures += 1
             if user.failures >= 5:
@@ -206,9 +261,7 @@ class FakeAuthBackend:
         key = email.strip().lower()
         if key not in self._users or self._codes.get(key) != code:
             raise BadCode
-        ok = len(new_password) >= 12 and any(c.isupper() for c in new_password)
-        ok = ok and any(c.islower() for c in new_password) and any(c.isdigit() for c in new_password)
-        if not ok:
+        if not _policy_ok(new_password):
             raise WeakPassword("Password must be at least 12 characters with upper, lower case and a digit")
         self._users[key].password = new_password
         del self._codes[key]
@@ -219,3 +272,72 @@ class FakeAuthBackend:
 
     def codes_sent(self, email: str) -> int:
         return self._sent.get(email.strip().lower(), 0)
+
+    def complete_new_password(self, email: str, session: str, new_password: str) -> Tokens:
+        key = email.strip().lower()
+        if self._sessions.get(session) != key:
+            raise BadCredentials
+        if not _policy_ok(new_password):
+            raise WeakPassword("Password must be at least 12 characters with upper, lower case and a digit")
+        del self._sessions[session]
+        user = self._users[key]
+        user.password, user.invited_at = new_password, None
+        return self.sign_in(key, new_password)
+
+    # --- IdentityProvider (admin side) ---
+    def create_user(self, email: str, name: str) -> str:
+        from tasklane.identity.idp import UserExists
+
+        key = email.strip().lower()
+        if key in self._users:
+            raise UserExists(email)
+        self._users[key] = _User(password=secrets.token_urlsafe(24))
+        return self._users[key].sub
+
+    def invite(self, email: str, name: str) -> str:
+        sub = self.create_user(email, name)
+        self.resend_invite(email)
+        return sub
+
+    def resend_invite(self, email: str) -> None:
+        user = self._users[email.strip().lower()]
+        user.password = f"Tmp-{secrets.token_urlsafe(9)}9a"
+        user.invited_at = self._clock.now()
+        user.invites += 1
+
+    def delete_user(self, email: str) -> None:
+        self._users.pop(email.strip().lower(), None)
+
+    def disable(self, email: str) -> None:
+        self._users[email.strip().lower()].enabled = False
+
+    def enable(self, email: str) -> None:
+        self._users[email.strip().lower()].enabled = True
+
+    def is_enabled(self, email: str) -> bool:
+        return self._users[email.strip().lower()].enabled
+
+    def set_password(self, email: str, password: str) -> None:
+        user = self._users[email.strip().lower()]
+        user.password, user.invited_at = password, None
+
+    def find_sub(self, email: str) -> str | None:
+        user = self._users.get(email.strip().lower())
+        return None if user is None else user.sub
+
+    # test helpers
+    def last_temp_password(self, email: str) -> str:
+        return self._users[email.strip().lower()].password
+
+    def invites_sent(self, email: str) -> int:
+        user = self._users.get(email.strip().lower())
+        return 0 if user is None else user.invites
+
+
+def _policy_ok(pw: str) -> bool:
+    return (
+        len(pw) >= 12
+        and any(c.isupper() for c in pw)
+        and any(c.islower() for c in pw)
+        and any(c.isdigit() for c in pw)
+    )

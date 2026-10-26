@@ -23,6 +23,12 @@ export class AuthError extends Error {
   }
 }
 
+/** An invitee's first sign-in (F1.2): they must choose their own password before a session exists. */
+export interface NewPasswordChallenge {
+  challenge: "new_password_required";
+  session: string;
+}
+
 export interface SignInOptions {
   sleep?: (ms: number) => Promise<void>;
   onRetry?: () => void;
@@ -49,11 +55,17 @@ async function toError(r: Response): Promise<AuthError> {
   return new AuthError(r.status, e.code ?? "error", e.message ?? "Sign-in failed", e.retry_after_s, e.fields);
 }
 
-export async function signIn(email: string, password: string, opts: SignInOptions = {}): Promise<Session> {
+export async function signIn(
+  email: string, password: string, opts: SignInOptions = {},
+): Promise<Session | NewPasswordChallenge> {
   const sleep = opts.sleep ?? wait;
   for (let attempt = 0; ; attempt++) {
     const r = await post("/sign-in", { email, password });
-    if (r.ok) return toSession(r);
+    if (r.ok) {
+      const data = await r.clone().json();
+      if (data.challenge === "new_password_required") return { challenge: data.challenge, session: data.session };
+      return toSession(r);
+    }
     const err = await toError(r);
     if (attempt === 0 && r.status === 401 && err.retryAfterS) {
       opts.onRetry?.();
@@ -91,4 +103,11 @@ export async function forgotPassword(email: string): Promise<void> {
 export async function resetPassword(email: string, code: string, newPassword: string): Promise<void> {
   const r = await post("/reset", { email, code, new_password: newPassword });
   if (!r.ok) throw await toError(r);
+}
+
+/** Completes an invitation: sets the first password and starts the session (F1.2). */
+export async function acceptInvite(email: string, session: string, newPassword: string): Promise<Session> {
+  const r = await post("/accept-invite", { email, session, new_password: newPassword });
+  if (!r.ok) throw await toError(r);
+  return toSession(r);
 }

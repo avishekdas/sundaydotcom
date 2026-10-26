@@ -3,7 +3,7 @@
  * browser, access token in memory only, refresh token only in the HttpOnly cookie (never in web storage).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { acceptInvite, AuthError, forgotPassword, refresh, resetPassword, signIn, signOut } from "./auth";
+import { acceptInvite, AuthError, forgotPassword, refresh, resetPassword, signIn, signOut, type Session } from "./auth";
 
 type Reply = { status: number; body?: unknown; headers?: Record<string, string> };
 
@@ -30,7 +30,7 @@ describe("auth via /api/auth", () => {
 
   it("signs in through the proxy and keeps the token in memory only", async () => {
     const calls = mockFetch(ok);
-    const s = await signIn("raj@example.com", "Correct-Horse-9");
+    const s = (await signIn("raj@example.com", "Correct-Horse-9")) as Session;
     expect(s.accessToken).toBe("at-1");
     expect(s.expiresAt).toBeGreaterThan(Date.now());
     expect(calls).toHaveLength(1);
@@ -46,7 +46,7 @@ describe("auth via /api/auth", () => {
     const calls = mockFetch(generic401(2), ok);
     const sleeps: number[] = [];
     const onRetry = vi.fn();
-    const s = await signIn("raj@example.com", "pw-pw-pw-pw-1", { sleep: async (ms) => { sleeps.push(ms); }, onRetry });
+    const s = (await signIn("raj@example.com", "pw-pw-pw-pw-1", { sleep: async (ms) => { sleeps.push(ms); }, onRetry })) as Session;
     expect(s.accessToken).toBe("at-1");
     expect(calls).toHaveLength(2);
     expect(sleeps).toEqual([2000]);
