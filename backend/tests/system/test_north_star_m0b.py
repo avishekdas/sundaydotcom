@@ -106,9 +106,14 @@ class Client:
         self.items[m["item_id"]] = {**cur, "version": m["version"], "values": vals}
 
     def gap_sync(self) -> None:
-        c = self.api("POST", "/api/v1/boards/10/changes", {"since_xmin": self.cursor})
-        self.cursor = c["next_since_xmin"]
-        self.refetch(sorted({x["item_id"] for x in c["changes"]}))
+        ids: set[str] = set()
+        while True:
+            c = self.api("POST", "/api/v1/boards/10/changes", {"since_xmin": self.cursor})
+            self.cursor = c["next_since_xmin"]
+            ids |= {x["item_id"] for x in c["changes"]}
+            if not c.get("more"):
+                break
+        self.refetch(sorted(ids))
 
 
 class Gateway:
@@ -123,44 +128,57 @@ class Gateway:
         return True
 
 
+def server_state(c: Client) -> dict[str, dict[str, Any]]:
+    rows = c.api("POST", "/api/v1/boards/10/items:fetch", {"ids": ["1001", "1002", "1003"]})["items"]
+    return {it["id"]: {"version": it["version"], "values": it["values"]} for it in rows}
+
+
+def state(c: Client) -> dict[str, dict[str, Any]]:
+    return {i: {"version": c.items[i]["version"], "values": c.items[i]["values"]} for i in ("1001", "1002", "1003")}
+
+
 @pytest.mark.parametrize("seed", [1, 7, 42, 2026])
 def test_two_sessions_converge_and_reconnect_recovers_missed_edits(board_db: str, seed: int) -> None:
     bus = InProcessBus(chaos_seed=seed)
     clock = FakeClock(datetime(2026, 10, 25, 12, tzinfo=UTC))
-    deps = Deps(
-        db=StrictDataApiFake(board_db),
-        publisher=BusPublisher(bus),
-        registry=InMemoryRegistry(clock),
-        clock=clock,
-        ws_url="/ws",
-        bus_name="t",
-    )
+    deps = Deps(db=StrictDataApiFake(board_db), publisher=BusPublisher(bus), registry=InMemoryRegistry(clock),
+                clock=clock, ws_url="/ws", bus_name="t")
     a, b = Client(deps, "a"), Client(deps, "b")
     gw = Gateway({a.conn: a, b.conn: b})
-    bus.subscribe("item.*", lambda e: fan_out(deps.registry, gw, e.payload))
+    delivered: list[tuple[str, int]] = []
+
+    def on_event(e: Event) -> None:
+        delivered.append((e.payload["item_id"], e.payload["payload"]["version"]))
+        fan_out(deps.registry, gw, e.payload)
+
+    bus.subscribe("item.*", on_event)
     a.start()
     b.start()
 
-    # 1. A edits a status; B converges via push (chaos: duplicates/reordering)
-    a.api("PATCH", "/api/v1/items/1003/values", {"values": {"status": {"l": 1}}, "mutation_id": "m1"})
+    # 1. A makes several edits; the bus holds them all, then delivers with chaos (reordering + duplicates).
+    #    Both sessions must converge through pushes alone — no gap sync.
+    published: list[tuple[str, int]] = []
+    for k in range(9):
+        item = ["1001", "1002", "1003"][k % 3]
+        r = a.api("PATCH", f"/api/v1/items/{item}/values",
+                  {"values": {"status": {"l": k % 3}, "amount": str(k)}, "mutation_id": f"m{k}"})
+        published.append((item, r["version"]))
     bus.drain()
-    assert b.items["1003"]["values"].get("status") == {"l": 1}
+    assert delivered != published, "chaos must reorder or duplicate deliveries"
+    truth = server_state(a)
+    assert state(a) == truth and state(b) == truth
 
-    # 2. B disconnects; A makes 10 edits across items; deliveries to B fail
+    # 2. B disconnects; A makes 10 more edits (deliveries to B fail); A stays converged by pushes only
     b.disconnect()
     for k in range(10):
         item = ["1001", "1002", "1003"][k % 3]
-        a.api("PATCH", f"/api/v1/items/{item}/values", {"values": {"note": f"edit {k}", "amount": str(k)}})
-        bus.drain()
+        a.api("PATCH", f"/api/v1/items/{item}/values", {"values": {"note": f"edit {k}", "amount": str(100 + k)}})
+    bus.drain()
+    truth = server_state(a)
+    assert state(a) == truth
+    assert state(b) != truth
 
-    # 3. B reconnects (subscribe first, then gap sync) and converges with A and the server
+    # 3. B reconnects (subscribe first, then gap sync) and converges — value and version for every item
     b.connect()
     b.gap_sync()
-    a.gap_sync()
-    server = {
-        it["id"]: it
-        for it in a.api("POST", "/api/v1/boards/10/items:fetch", {"ids": ["1001", "1002", "1003"]})["items"]
-    }
-    for item_id, it in server.items():
-        assert b.items[item_id]["version"] == it["version"] and b.items[item_id]["values"] == it["values"]
-        assert a.items[item_id]["version"] == it["version"] and a.items[item_id]["values"] == it["values"]
+    assert state(b) == truth

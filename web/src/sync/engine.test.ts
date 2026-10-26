@@ -92,4 +92,25 @@ describe("SyncEngine", () => {
     expect(live.length).toBe(2);
     expect(e.store.view("1")).toMatchObject(srv.items.get("1")!);
   });
+
+  it("follows paged changes and reloads on an expired cursor (410)", async () => {
+    const srv = new FakeServer();
+    const { f } = sockets(srv.calls);
+    const e = new SyncEngine(srv, f, "10", async () => {});
+    await e.start();
+    for (let k = 0; k < 5; k++) srv.write("1", "note", `n${k}`);
+    const real = srv.changes.bind(srv);
+    let calls = 0;
+    srv.changes = async (b, since) => {               // first page says "more"
+      const r = await real(b, since);
+      return ++calls === 1 ? { ...r, more: true, next_since_xmin: since! } : r;
+    };
+    await e.gapSync();
+    expect(calls).toBe(2);
+    expect(e.store.view("1")).toMatchObject(srv.items.get("1")!);
+    srv.changes = async (b, since) => { if (since !== null) throw Object.assign(new Error("gone"), { status: 410 }); return real(b, since); };
+    srv.items.set("3", { id: "3", name: "3", group_id: "g", version: 1, values: {} });
+    await e.gapSync();
+    expect(e.order).toEqual(["1", "2", "3"]);
+  });
 });

@@ -131,3 +131,14 @@ def test_outbox_workers_use_the_outbox_role_and_tick_the_tick_role(app: cdk.App)
     assert "tlworkeroutbox" in by_name["tasklane-dev-outbox-acker"].replace("_", "")
     assert "tlworkeroutbox" in by_name["tasklane-dev-outbox-sweeper"].replace("_", "")
     assert "tlworkeroutbox" not in by_name["tasklane-dev-scheduler-tick"].replace("_", "")
+
+
+def test_sweeper_metric_alarms_can_fire_at_the_dev_cadence(app: cdk.App) -> None:  # M0B-2
+    alarms = [
+        a["Properties"]
+        for a in template(app, "tasklane-dev-workers").find_resources("AWS::CloudWatch::Alarm").values()
+        if a["Properties"].get("Namespace") == "Tasklane/Outbox"
+    ]
+    assert len(alarms) == 3
+    for a in alarms:  # one datapoint per hour on dev → 1-hour period, alarm on the first breaching datapoint
+        assert a["Period"] == 3600 and a["EvaluationPeriods"] == 1 and a.get("DatapointsToAlarm", 1) == 1, a

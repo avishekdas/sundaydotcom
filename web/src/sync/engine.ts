@@ -16,8 +16,9 @@ export interface BoardApi {
   schema(boardId: string): Promise<Schema>;
   query(boardId: string): Promise<{ ids: string[]; groups: { id: string; count: number }[] }>;
   fetch(boardId: string, ids: string[]): Promise<ServerItem[]>;
+  /** Opaque cursor; `more` = another page follows. Rejects with `{ status: 410 }` when the cursor expired. */
   changes(boardId: string, since: string | null): Promise<{ next_since_xmin: string; db_generation: number;
-                                                            changes: { item_id: string }[] }>;
+                                                            more?: boolean; changes: { item_id: string }[] }>;
 }
 
 export interface Socket {
@@ -95,16 +96,31 @@ export class SyncEngine {
 
   /** Re-fetch everything that changed since the cursor; full reload on a new db_generation (OPS-10). */
   async gapSync(): Promise<void> {
-    const c = await this.api.changes(this.boardId, this.cursor);
-    if (this.generation !== null && c.db_generation !== this.generation) {
-      this.generation = c.db_generation;
+    const ids = new Set<string>();
+    for (;;) {
+      let c;
+      try {
+        c = await this.api.changes(this.boardId, this.cursor);
+      } catch (e) {
+        if ((e as { status?: number }).status === 410) return this.reload(); // cursor older than retention
+        throw e;
+      }
+      if (this.generation !== null && c.db_generation !== this.generation) {
+        this.generation = c.db_generation;
+        return this.reload();
+      }
       this.cursor = c.next_since_xmin;
-      await this.load();
-      return;
+      for (const x of c.changes) ids.add(x.item_id);
+      if (!c.more) break;
     }
+    if (ids.size) await this.refetch([...ids]);
+  }
+
+  private async reload(): Promise<void> {
+    const c = await this.api.changes(this.boardId, null);
     this.cursor = c.next_since_xmin;
-    const ids = [...new Set(c.changes.map((x) => x.item_id))];
-    if (ids.length) await this.refetch(ids);
+    this.generation = c.db_generation;
+    await this.load();
   }
 
   stop(): void {

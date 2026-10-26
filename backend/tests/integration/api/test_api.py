@@ -159,3 +159,13 @@ def test_expired_cursor_returns_410(deps: Deps) -> None:
 
     status, body = call(deps, "POST", "/api/v1/boards/10/changes", {"since_xmin": encode_cursor(1, 0, 1_700_000_000)})
     assert status == 410 and body["error"]["code"] == "gone"
+
+
+def test_publish_failure_after_commit_still_returns_the_write(deps: Deps) -> None:  # M0B-11
+    class Down:
+        def put_events(self, entries: list[dict[str, Any]]) -> list[int]:
+            raise ConnectionError("EventBridge unavailable")
+
+    deps.publisher = Down()
+    status, body = call(deps, "PATCH", "/api/v1/items/1003/values", {"values": {"note": "x"}})
+    assert status == 200 and body["version"] == 2  # the outbox row stays unpublished; the sweeper republishes it

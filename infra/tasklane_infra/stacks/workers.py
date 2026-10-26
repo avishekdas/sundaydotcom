@@ -122,6 +122,11 @@ class WorkersStack(cdk.Stack):
             missing=cw.TreatMissingData.BREACHING,
         )
 
+        # The sweeper reports once per run: per minute normally, hourly on dev (D-037) — alarms must be able to fire
+        # at that cadence (M0B-2).
+        hourly = bool(stage.dead_man_hours)
+        sweep_period = cdk.Duration.hours(1) if hourly else cdk.Duration.minutes(1)
+        sweep_evals = 1 if hourly else 3
         ns = "Tasklane/Outbox"
         for mid, field, thr, book, summ in (
             ("Backlog", "backlog", 1000, "outbox-circuit", "Outbox backlog > 1,000"),
@@ -140,14 +145,12 @@ class WorkersStack(cdk.Stack):
             alarm(
                 self,
                 f"{mid}Alarm",
-                metric=cw.Metric(
-                    namespace=ns, metric_name=mid, statistic="Maximum", period=cdk.Duration.minutes(1)
-                ),
+                metric=cw.Metric(namespace=ns, metric_name=mid, statistic="Maximum", period=sweep_period),
                 threshold=thr,
                 comparison=GT,
                 runbook=book,
                 summary=summ,
                 topic=t,
-                evaluation_periods=3,
+                evaluation_periods=sweep_evals,
             )
         self.functions: dict[str, lambda_.Function] = {"acker": acker, "sweeper": sweeper, "tick": tick}

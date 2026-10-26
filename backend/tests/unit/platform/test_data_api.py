@@ -163,3 +163,12 @@ def test_resuming_cluster_is_retried_then_gives_up() -> None:
     c2 = FakeClient([ResumingError()] * 10)
     with pytest.raises(DatabaseResuming):
         db(c2, resume_attempts=3).query("select 1")
+
+
+def test_default_resume_budget_fits_the_api_timeout() -> None:  # M0B-15: api λ times out at 29 s
+    slept: list[float] = []
+    c = FakeClient([ResumingError()] * 20)
+    d = DataApiDb(c, resource_arn="a", secret_arn="s", database="d", sleep=slept.append)  # noqa: S106
+    with pytest.raises(DatabaseResuming):
+        d.query("select 1")
+    assert sum(slept) <= 20

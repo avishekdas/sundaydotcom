@@ -23,6 +23,7 @@ STATUS = {
     "forbidden": 403,
     "not_found": 404,
     "version_conflict": 409,
+    "gone": 410,
     "rate_limited": 429,
     "stale_epoch": 409,
 }
@@ -71,6 +72,11 @@ def _api_error(e: ApiError) -> Response[str]:
 @app.exception_handler(boards.ValidationFailed)  # type: ignore[untyped-decorator]
 def _validation(e: boards.ValidationFailed) -> Response[str]:
     return _error("validation_error", "Invalid request", e.fields)
+
+
+@app.exception_handler(boards.CursorExpired)  # type: ignore[untyped-decorator]
+def _gone(_e: boards.CursorExpired) -> Response[str]:
+    return _error("gone", "Cursor expired; reload the board")
 
 
 @app.not_found

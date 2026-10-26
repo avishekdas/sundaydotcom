@@ -220,21 +220,60 @@ select null, null, null where not exists (select 1 from u)""",
     return WriteResult(version=res.version, values=normalized, events=[event])
 
 
+CHANGES_PAGE = 1000
+CURSOR_MAX_AGE_S = 24 * 3600  # board_changes keeps 25 h; older cursors must reload (arch 03 §3.3a)
+_CURSOR = re.compile(r"^v1\.(\d+)\.(-?\d+)\.(\d+)$")
+
+
+class CursorExpired(ValueError):
+    """The cursor is older than the change-log retention → 410, the client reloads the board."""
+
+
+def encode_cursor(xid: int, seq: int, issued: int) -> str:
+    return f"v1.{xid}.{seq}.{issued}"
+
+
 def changes(db: Db, board_id: int, *, since_xmin: str | None) -> dict[str, Any]:
-    """Gap sync (arch 03 §3.3a): rows with since ≤ xid < current snapshot xmin; next cursor = that xmin."""
-    if since_xmin is not None and not since_xmin.isdigit():
-        raise ValidationFailed({"since_xmin": "must be a transaction id"})
+    """Gap sync (arch 03 §3.3a, M0B-1).
+
+    The cursor is opaque: a keyset position (xid, seq) plus the time it was issued. Rows come back in (xid, seq)
+    order with ``(xid, seq) > position`` and ``xid < pg_snapshot_xmin`` (every older transaction has finished, so
+    none can still appear below the position). A full page returns ``more: true`` and a cursor at the last row;
+    otherwise the next cursor is the snapshot xmin. Cursors older than 24 h raise CursorExpired.
+    """
+    if since_xmin is None:
+        cx, cs, issued = None, -1, 0
+    else:
+        m = _CURSOR.match(since_xmin)
+        if not m:
+            raise ValidationFailed({"since_xmin": "invalid cursor"})
+        cx, cs, issued = int(m.group(1)), int(m.group(2)), int(m.group(3))
     rows = db.query(
-        """select json_build_object(
-             'next_since_xmin', pg_snapshot_xmin(pg_current_snapshot())::text,
+        """with snap as (select pg_snapshot_xmin(pg_current_snapshot()) as xmin, extract(epoch from now())::bigint as now_s),
+           page as (select c.item_id, c.kind, c.columns, c.seq, c.xid from tl.board_changes c, snap
+                    where :cx::text is not null and c.board_id = :b and c.at >= now() - interval '25 hours'
+                      and (c.xid > (:cx::text)::xid8 or (c.xid = (:cx::text)::xid8 and c.seq > :cs))
+                      and c.xid < snap.xmin
+                    order by c.xid, c.seq limit :lim)
+           select json_build_object(
+             'xmin', (select xmin::text from snap), 'now_s', (select now_s from snap),
              'db_generation', (select db_generation from tl.account),
-             'changes', case when :since::text is null then '[]'::json else coalesce((
-                 select json_agg(json_build_object('item_id', c.item_id::text, 'kind', c.kind, 'columns', c.columns,
-                                                   'seq', c.seq) order by c.seq)
-                 from (select * from tl.board_changes
-                       where board_id = :b and at >= now() - interval '25 hours'
-                         and xid >= (:since::text)::xid8 and xid < pg_snapshot_xmin(pg_current_snapshot())
-                       order by seq limit 1000) c), '[]'::json) end)::text as doc""",
-        {"b": board_id, "since": since_xmin},
+             'rows', coalesce((select json_agg(json_build_object('item_id', p.item_id::text, 'kind', p.kind,
+                                 'columns', p.columns, 'seq', p.seq, 'xid', p.xid::text) order by p.xid, p.seq)
+                               from page p), '[]'::json))::text as doc""",
+        {"b": board_id, "cx": None if cx is None else str(cx), "cs": cs, "lim": CHANGES_PAGE + 1},
     )
-    return _j(rows[0]["doc"])  # type: ignore[no-any-return]
+    doc = _j(rows[0]["doc"])
+    now_s = int(doc["now_s"])
+    if cx is not None and now_s - issued > CURSOR_MAX_AGE_S:
+        raise CursorExpired(since_xmin)
+    page = doc["rows"]
+    more = len(page) > CHANGES_PAGE
+    page = page[:CHANGES_PAGE]
+    if more:
+        last = page[-1]
+        nxt = encode_cursor(int(last["xid"]), int(last["seq"]), issued)
+    else:
+        nxt = encode_cursor(int(doc["xmin"]), -1, now_s)
+    return {"next_since_xmin": nxt, "db_generation": doc["db_generation"], "more": more,
+            "changes": [{k: r[k] for k in ("item_id", "kind", "columns", "seq")} for r in page]}
