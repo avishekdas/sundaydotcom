@@ -41,12 +41,15 @@ READ_ROUTES = {
     ("GET", "/api/v1/nav"),
     ("GET", "/api/v1/workspaces/<workspace_id>"),
     ("GET", "/api/v1/account"),
+    ("GET", "/api/v1/boards/<board_id>"),
+    ("PATCH", "/api/v1/me"),  # own profile (A16)
 }
 # Unauthenticated auth-proxy routes (07 §7.1) sit outside the JWT authorizer and outside this check.
 PUBLIC_PREFIX = "/api/auth/"
 # Valid bodies, so a write is refused for the right reason (not a 400) — unknown writes get {}.
 BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/api/v1/boards/<board_id>/items:fetch"): {"ids": ["1001"]},
+    ("PATCH", "/api/v1/me"): {"title": "Viewer"},
     ("PATCH", "/api/v1/items/<item_id>/values"): {"values": {"note": "viewer was here"}},
     ("POST", "/api/v1/boards/<board_id>/columns"): {"title": "Viewer column"},
     ("POST", "/api/v1/workspaces"): {"name": "Viewer space", "kind": "open"},
@@ -56,6 +59,8 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/api/v1/users"): {"email": "viewer-invite@example.com", "name": "V", "role": "member"},
     ("PATCH", "/api/v1/users/<user_id>"): {"role": "member"},
     ("PATCH", "/api/v1/account/settings"): {"name": "Viewer Inc"},
+    ("PATCH", "/api/v1/boards/<board_id>"): {"kind": "private"},
+    ("PUT", "/api/v1/boards/<board_id>/members/<user_id>"): {"role": "member"},
 }
 
 

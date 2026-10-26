@@ -183,6 +183,13 @@ WORKSPACE_ROUTES = {  # authorized by workspace role / account caps; behaviour i
     ("PUT", "/api/v1/workspaces/<workspace_id>/members/<user_id>"),
     ("DELETE", "/api/v1/workspaces/<workspace_id>/members/<user_id>"),
     ("POST", "/api/v1/boards/<board_id>/move"),
+    (
+        "GET",
+        "/api/v1/boards/<board_id>",
+    ),  # board access (owners manage; behaviour in test_board_access_api.py)
+    ("PATCH", "/api/v1/boards/<board_id>"),
+    ("PUT", "/api/v1/boards/<board_id>/members/<user_id>"),
+    ("DELETE", "/api/v1/boards/<board_id>/members/<user_id>"),
 }
 ADMIN_ROUTES = {  # account administration (K1: Admin only); behaviour in identity/test_users_api.py
     ("GET", "/api/v1/users"),
@@ -198,6 +205,7 @@ SELF_ROUTES = {  # any active user, about themselves
     ("POST", "/api/v1/realtime/ticket"),
     ("POST", "/api/v1/me/sign-out-everywhere"),
     ("GET", "/api/v1/account"),  # display settings for the top bar (A1.3)
+    ("PATCH", "/api/v1/me"),  # own profile (A16)
 }
 WORLD = {  # board id → (item on it, permission set, kind, owners)
     10: (1001, "edit_everything", "main", set()),
