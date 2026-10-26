@@ -18,6 +18,9 @@ import pytest
 
 from tasklane.api.app import Deps, handle, route_inventory
 from tasklane.collab.realtime import InMemoryRegistry
+from tasklane.identity.auth_backend import FakeAuthBackend
+from tasklane.identity.auth_proxy import AuthProxy
+from tasklane.platform.counters import InMemoryCounters
 from tasklane.platform.clock import FakeClock
 from tasklane.platform.db import StrictDataApiFake
 
@@ -34,7 +37,10 @@ READ_ROUTES = {
     ("POST", "/api/v1/boards/<board_id>/items:fetch"),
     ("POST", "/api/v1/boards/<board_id>/changes"),
     ("POST", "/api/v1/realtime/ticket"),
+    ("POST", "/api/v1/me/sign-out-everywhere"),  # self-service on the caller's own sessions (D-052)
 }
+# Unauthenticated auth-proxy routes (07 §7.1) sit outside the JWT authorizer and outside this check.
+PUBLIC_PREFIX = "/api/auth/"
 # Valid bodies, so a write is refused for the right reason (not a 400) — unknown writes get {}.
 BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("POST", "/api/v1/boards/<board_id>/items:fetch"): {"ids": ["1001"]},
@@ -84,6 +90,7 @@ def viewer_deps(board_db: str) -> Deps:
         clock=clock,
         ws_url="/ws",
         bus_name="t",
+        auth=AuthProxy(FakeAuthBackend(clock), InMemoryCounters(clock), clock),
     )
 
 
@@ -91,12 +98,20 @@ def test_read_routes_are_registered() -> None:
     assert set(route_inventory()) >= READ_ROUTES, "a declared read route no longer exists"
 
 
+def test_every_route_is_versioned_api_or_auth_proxy() -> None:
+    assert all(p.startswith(("/api/v1/", PUBLIC_PREFIX)) for _, p in route_inventory())
+
+
+def _authenticated_routes() -> list[tuple[str, str]]:
+    return [(m, p) for m, p in route_inventory() if not p.startswith(PUBLIC_PREFIX)]
+
+
 @pytest.mark.north_star("7.viewer_read_only")
 @pytest.mark.xfail(
     strict=True, raises=AssertionError, reason="M1 kickoff: permission framework not built yet"
 )
 def test_viewer_reads_every_read_route_and_is_refused_on_every_other(viewer_deps: Deps) -> None:
-    got = {(m, p): _call(viewer_deps, m, p, VIEWER_SUB) for m, p in route_inventory()}
+    got = {(m, p): _call(viewer_deps, m, p, VIEWER_SUB) for m, p in _authenticated_routes()}
     reads_failing = {r: s for r, s in got.items() if r in READ_ROUTES and s != 200}
     writes_allowed = {r: s for r, s in got.items() if r not in READ_ROUTES and s != 403}
     assert not reads_failing, f"viewer could not read: {reads_failing}"

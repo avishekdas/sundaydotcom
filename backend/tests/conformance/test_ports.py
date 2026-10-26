@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from typing import Any
 
 import boto3
@@ -16,6 +17,8 @@ from moto import mock_aws
 
 from tasklane.identity.idp import CognitoIdp, FakeIdp, IdentityProvider, UserExists
 from tasklane.platform.blobs import BlobStore, InMemoryBlobStore, S3BlobStore
+from tasklane.platform.clock import FakeClock
+from tasklane.platform.counters import Counters, DynamoCounters, InMemoryCounters
 from tasklane.platform.mailer import FakeMailer, Mailer, SesMailer
 
 
@@ -113,3 +116,33 @@ def test_idp_set_password_and_find_sub(idp: IdentityProvider) -> None:
     sub = idp.create_user("pw@example.com", "Pw Person")
     idp.set_password("pw@example.com", "Correct-Horse-42")
     assert idp.find_sub("PW@example.com") == sub
+
+
+@pytest.fixture(params=["memory", "aws"])
+def counters(request: pytest.FixtureRequest) -> Iterator[tuple[Counters, FakeClock]]:
+    clock = FakeClock(datetime(2026, 10, 26, 12, tzinfo=UTC))
+    if request.param == "memory":
+        yield InMemoryCounters(clock), clock
+        return
+    with mock_aws():
+        c = boto3.client("dynamodb", region_name="us-east-1")
+        c.create_table(
+            TableName="counters",
+            KeySchema=[{"AttributeName": "pk", "KeyType": "HASH"}],
+            AttributeDefinitions=[{"AttributeName": "pk", "AttributeType": "S"}],
+            BillingMode="PAY_PER_REQUEST",
+        )
+        yield DynamoCounters(c, "counters", clock), clock
+
+
+def test_counters_window_starts_at_first_hit(counters: tuple[Counters, FakeClock]) -> None:
+    """Rate-limit counters (arch 03 §3.8): a window opens at the first hit and expires as a whole."""
+    k, clock = counters
+    assert k.count("x") == 0 and k.remaining_s("x") == 0
+    assert [k.hit("x", 900) for _ in range(3)] == [1, 2, 3]
+    clock.advance(seconds=600)
+    assert k.hit("x", 900) == 4 and 299 <= k.remaining_s("x") <= 300
+    clock.advance(seconds=301)
+    assert k.count("x") == 0 and k.hit("x", 900) == 1
+    k.clear("x")
+    assert k.count("x") == 0

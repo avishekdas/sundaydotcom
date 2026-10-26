@@ -32,7 +32,10 @@ def test_http_api_has_jwt_authorizer_and_api_lambda(app: cdk.App) -> None:
         "AWS::Lambda::Function", {"FunctionName": "tasklane-dev-api", "Handler": "tasklane.api.app.handler"}
     )
     routes = [r["Properties"] for r in t.find_resources("AWS::ApiGatewayV2::Route").values()]
-    assert routes and all(r.get("AuthorizationType") == "JWT" for r in routes)
+    jwt = [
+        r for r in routes if not r["RouteKey"].endswith("/api/auth/{proxy+}")
+    ]  # auth proxy is public (07 §7.1)
+    assert jwt and all(r.get("AuthorizationType") == "JWT" for r in jwt)
 
 
 def test_api_uses_api_rw_secret_and_can_put_events(app: cdk.App) -> None:
