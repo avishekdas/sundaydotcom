@@ -76,6 +76,9 @@ PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced 
 - Spike IaC is committed as templates under `spikes/*/infra` and deployed as throwaway stacks; delete after.
 
 ## Gotchas and learnings (keep adding)
+- **Never push a red commit while the previous green's `ci` is still running**: `ci` cancels in-progress runs on
+  the branch, so the green is never deployed (happened with e048f14 → cancelled by 1bcba41). Wait for the green's
+  `ci` to finish (deploy may keep running) before pushing the next red.
 - **Desktop (Mac) sessions** have no `/home/claude` cloud clone: work, commit and `git push` directly in `~/tasklane`
   (push works with the Mac's git credentials). Gates locally need `JSII_RUNTIME_PACKAGE_CACHE=disabled` (jsii refuses
   the group-writable `~/Library/Caches`) and a one-off `npm ci` in `web/`. The AWS MCP connector can drop mid-session

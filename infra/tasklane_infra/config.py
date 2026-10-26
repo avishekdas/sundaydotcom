@@ -20,6 +20,7 @@ class Stage:
     dead_man_hours: int = 0
     alert_email: str | None = None
     test_hooks: bool = False  # fake clock / fault injection endpoints; refused for prod (plan M0b-8)
+    bootstrap_admin_email: str | None = None  # K7.6 / A1.1: invited as the first Admin on deploy
     # D-039: dev has CloudTrail only; GuardDuty / Security Hub / Config come with a prod stage
     security_baseline: tuple[str, ...] = (
         "cloudtrail",
@@ -42,4 +43,5 @@ DEV = Stage(
     alert_email="avishekdas.cool@gmail.com",  # D-040
     security_baseline=("cloudtrail",),
     test_hooks=True,
+    bootstrap_admin_email="avishekdas.cool@gmail.com",  # D-055
 )

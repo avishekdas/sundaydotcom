@@ -6,6 +6,7 @@ import aws_cdk as cdk
 
 from tasklane_infra.config import Stage
 from tasklane_infra.stacks.api import ApiStack
+from tasklane_infra.stacks.bootstrap import BootstrapStack
 from tasklane_infra.stacks.data import DataStack
 from tasklane_infra.stacks.edge import EdgeStack
 from tasklane_infra.stacks.identity import IdentityStack
@@ -72,6 +73,18 @@ def build(app: cdk.App, stage: Stage) -> None:
     for code in (rt, api):
         code.add_dependency(mig)
     stacks: list[cdk.Stack] = [net, data, mig, msg, wrk, idn, rt, api, edge, obs]
+    if stage.bootstrap_admin_email:  # K7.6: first Admin from config (D-055)
+        boot = BootstrapStack(
+            app,
+            name("bootstrap"),
+            stack_name=name("bootstrap"),
+            env=env,
+            stage=stage,
+            data=data,
+            identity=idn,
+        )
+        boot.add_dependency(mig)
+        stacks.append(boot)
     if stage.test_hooks:  # dev-only fixtures (D-049); build() already refuses test hooks for prod
         tid = TestIdentitiesStack(
             app,
