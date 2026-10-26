@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import tempfile
 import uuid
 from collections.abc import Iterator
@@ -23,11 +24,13 @@ def pg_uri() -> Iterator[str]:
         return
     import embedded_postgres
 
-    server = embedded_postgres.get_server(tempfile.mkdtemp(prefix="tl-pg-"))
+    data_dir = tempfile.mkdtemp(prefix="tl-pg-")
+    server = embedded_postgres.get_server(data_dir)
     try:
         yield server.get_uri()
     finally:
         server.cleanup()
+        shutil.rmtree(data_dir, ignore_errors=True)  # a full run used to leave ~2 GB behind
 
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "migrations"
@@ -42,6 +45,8 @@ def fresh_db(pg_uri: str) -> Iterator[str]:
     uri = make_conninfo(pg_uri, dbname=name)
     apply_migrations(uri, MIGRATIONS)
     yield uri
+    with psycopg.connect(pg_uri, autocommit=True) as c:  # one database per test must not pile up on disk
+        c.execute(f"drop database if exists {name} with (force)")
 
 
 STATUS = {
