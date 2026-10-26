@@ -1,149 +1,153 @@
 # Tasklane — working notes for Claude sessions
 
-Self-hosted monday.com-style Work Management + CRM ("Tasklane") on AWS serverless. Owner: Avishek Das
-(software architect, Python, extensive design experience — talk to him as a peer). This file is the hand-off
-between sessions: **read it first, keep it current** (status at every milestone, learnings as they happen).
+Self-hosted monday.com-style Work Management + CRM ("Tasklane") on AWS serverless. **North star = replicate
+monday.com features** (user, 2026-10-26); security extras that monday.com does not need (e.g. MFA) are deferred.
+Owner: Avishek Das (software architect, Python, extensive design experience — talk to him as a peer). This file is
+the hand-off between sessions: **read it first, keep it current** (status at every story, learnings as they happen).
 
 ## Start of every session (checklist)
-1. Read this file, then the plan's section for the current milestone (`docs/04-plan/implementation-plan.md`,
-   status line + "Carried from the … review"), the tail of `docs/00-decision-log.md`, and the latest
-   `docs/04-plan/milestone-reviews/<M>.md`.
-2. Make sure the repo is attached **with push access** (`add_repo` access=push; the user has asked Claude to own
-   pushing) and the cloud clone `/home/claude/sundaydotcom` is at `origin/main`.
-3. Baseline the gates in the clone before changing anything (see "Gates"). Check CI with the public API (below).
-4. State which story you are starting and what "done" means for it, tied to an AC and/or a north-star step.
+1. Read this file, then the plan's section for the current milestone (`docs/04-plan/implementation-plan.md`),
+   the tail of `docs/00-decision-log.md` (D-045…D-058 are this M1's decisions), the latest review
+   `docs/04-plan/milestone-reviews/<M>.md`, and the requirement files the next story touches.
+2. Where you run decides git: **Mac desktop session** → work, commit and `git push` directly in `~/tasklane`
+   (push works). **Cloud session** → clone to `/home/claude/sundaydotcom` with push access, push from there, then
+   the user fast-forwards `~/tasklane` (`git pull --ff-only`).
+3. Baseline the gates before changing anything (see "Gates"); check CI and the last deploy (see "CI").
+4. Before every story: restate it, its ACs and north-star steps, then ask questions until ≥ 95 % confident.
 
 ## How the user wants work done (non-negotiable)
-- **≥ 95 % confidence before every step.** If below, ask with AskUserQuestion (2–4 concrete options, the
-  recommended one first with its trade-off) — never guess on scope, cost, security or anything external.
-  Decisions with cost or external effect are the user's; record each as **D-xxx** in the decision log.
-- **North-star alignment at every milestone** (plan §1.1, `contracts/north_star.yaml`): at kickoff the
-  milestone's steps get tests first as strict expected failures (pytest `xfail(strict=True, raises=AssertionError)`,
-  Playwright `test.fail()`); the milestone is done only when they pass in Tier A (in-process, chaos seeds) and
-  Tier B (Playwright on dev). The contract test fails the build for untagged steps or missing tests.
-- **TDD**: commit a red test first (`test(<area>): red — …`), then green. **Push the red commit on its own** and
-  let CI record the red run before pushing the green one (CI runs only on the head of a push; TP-6).
+- **≥ 95 % confidence before every step and story.** Ask **one question at a time**, in plain text with lettered
+  options, the recommended one first with its trade-off and enough context to answer (AskUserQuestion failed in
+  desktop sessions). Never guess on scope, cost, security or anything external. Decisions with cost or external
+  effect are the user's; record each as **D-xxx** in the decision log.
+- **TDD**: commit a red test first (`test(<area>): red — …`), **push it alone and let CI record the red run**, then
+  the green. Strict-xfail north-star steps at milestone kickoff (pytest `xfail(strict=True, raises=AssertionError)`,
+  Playwright `test.fail()`); a milestone is done when they pass in Tier A (in-process) and Tier B (Playwright on dev).
 - Milestone done = plan §1.3 checklist incl. an **independent review agent** (one that did not build it) writing
-  `milestone-reviews/<M>.md`; blocking findings fixed before "done".
-- Commits end with the Co-Authored-By / Claude-Session trailers; author email is the GitHub no-reply
-  `5960956+avishekdas@users.noreply.github.com` (GitHub rejects pushes exposing the private email).
-- Implementation plans follow the user's style: TDD, milestone-driven, system test at the end of each milestone.
-- Keep replies short; don't recap steps; say plainly what failed.
-
-## Git, CI and the user's copy
-- Develop, test and commit in the **cloud clone** `/home/claude/sundaydotcom`; `git push origin main` from there.
-  Then fast-forward the user's copy `~/tasklane` (Mac) through the device shell: `cd $HOME/mnt/tasklane &&
-  git pull --ff-only`. The device VM **cannot run the Mac's `.venv`** (macOS binaries) and has **no GitHub
-  credentials** (fetch/pull of the public repo works, push does not). Delete permission in `~/tasklane` is needed
-  for git's lock files (request it once per session if a git command fails on a lock).
-- CI status without `gh` (its token is invalid here): public API, e.g.
-  `curl -sS "https://api.github.com/repos/avishekdas/sundaydotcom/actions/runs?per_page=8"`. Logs aren't readable
-  through the proxy: rely on step results / annotations (`scripts/ci-run.sh` turns failures into annotations).
-- Pipeline on push to `main`: ci → deploy-dev (data gate → network/data/migrate stacks → migrate λ → code stacks)
-  → e2e-dev (Tier B, all `e2e/*.spec.ts`). The `dev` GitHub environment accepts deployments from `main` only.
-  e2e-dev runs list `head_sha` as main's head at trigger time, not necessarily the deployed commit.
+  `docs/04-plan/milestone-reviews/<M>.md`; blocking findings fixed before "done".
+- Commits: conventional type, end with `Co-Authored-By: Claude …`; author email is the GitHub no-reply
+  `5960956+avishekdas@users.noreply.github.com`. Keep replies short; say plainly what failed.
+- The user decides how big a story is; this M1 they chose bigger bundles (one story, one red/green) after the auth
+  slice. Ask, don't assume.
 
 ## Gates (= `scripts/check.sh` = CI)
-In `backend/` (set `UV_SYSTEM_CERTS=1`, unset `UV_NATIVE_TLS`): `uv run ruff format --check . && uv run ruff
-check . && uv run mypy src && uv run lint-imports && uv run pytest -q --cov=tasklane --cov-fail-under=90`.
-`infra/`: ruff + pytest (CDK assertions). `web/`: `npx tsc -b && npx vitest run`. Integration tests use embedded
-PostgreSQL 18.6 (~25 s for the whole backend suite). Import layers are enforced (arch 11): devserver → api|workers
-→ collab|automation|insights|crm|forms → workmgmt → computed → schema → identity → platform.
+- backend: `UV_SYSTEM_CERTS=1`, unset `UV_NATIVE_TLS`; `uv run ruff format --check . && uv run ruff check . && uv run
+  mypy src && uv run lint-imports && uv run pytest -q --cov=tasklane --cov-fail-under=90` (≈ 50 s, 405 tests, 94 %).
+- infra: `JSII_RUNTIME_PACKAGE_CACHE=disabled JSII_SILENCE_WARNING_DEPRECATED_NODE_VERSION=1 uv run pytest -q` (65).
+- web: `npx tsc -b && npx vitest run` (44). Use Node ≥ 22 for anything npm: `PATH=~/.nvm/versions/node/v22.23.4/bin:$PATH`.
+- CI also runs squawk on migrations ≥ 0005: `npx -y squawk-cli@2.30.0 --exclude prefer-robust-stmts,prefer-identity,prefer-bigint-over-smallint,require-timeout-settings <files>`.
+- Import layers (import-linter): devserver → api|workers → collab|automation|insights|crm|forms → workmgmt →
+  computed → schema → identity → platform.
 
-## Where things are
-- Plan: `docs/04-plan/implementation-plan.md` (M0a…M9; §1 how we work, §1.3 done checklist, §1.4 dev-only
-  adaptation D-031, §2 milestone map, §4 load gates). AC ownership: `docs/04-plan/ac-ownership.md` (M1 owns 24).
-- Requirements: `docs/02-requirements/` (north star in `README.md`; K1–K3/K7 in `09-permissions-admin.md`).
-- Architecture: `docs/03-architecture/` — 07 security & permissions (§7.1 auth proxy, §7.2 authz, §7.2a
-  visibility rule table), 03 data model, 04 API, 05 events/realtime, 02 deployment, ADRs in `adr.md`
-  (Appendix A = spike outcomes). Spikes: `spikes/*/REPORT.md` (S-2b: `spikes/s2b/`).
-- Code: `backend/` (Python 3.13, uv), `infra/` (CDK Python), `web/` (React+TS+Vite), `e2e/` (Playwright),
-  `contracts/` (`north_star.yaml`, `events/`), `ops/` (runbooks, seed), `scripts/`.
-- Key code: `platform/db.py` (Db port, `StrictDataApiFake`, `Json` params), `platform/mutation.py` (single-statement
-  writable-CTE builder with guards), `identity/visibility.py` (VisibleItems CTEs), `api/app.py` (`route_inventory()`),
-  `tests/system/test_north_star_m1.py` (`READ_ROUTES` — a new route is a write until declared a read).
+## CI, deploy and evidence
+- CI status (gh token invalid): `curl -sS "https://api.github.com/repos/avishekdas/sundaydotcom/actions/runs?per_page=8"`.
+  Logs are not readable; **failure details are in check-run annotations**:
+  `curl …/commits/<sha>/check-runs` → `…/check-runs/<id>/annotations`. Every CI/deploy/e2e step that matters runs
+  through `scripts/ci-run.sh`, which turns the last 40 log lines of a failure into an annotation (deploy failures
+  show the CloudFormation events there).
+- Pipeline on push to `main`: ci → deploy-dev (data gate → network/data/migrate stacks → **migrate λ** → code
+  stacks) → e2e-dev (Tier B: all `e2e/*.spec.ts`, then `scripts/ac-k7-2-probe.sh`). e2e-dev records main's head
+  sha at trigger time, not necessarily the deployed commit.
+- **Never push while the previous push's `ci` is running** (it cancels in-progress runs; a green was once never
+  deployed). Prefer also waiting for deploy-dev to finish: a new push queues another deploy.
+- Migrations apply **before** code stacks: if a code stack then rolls back, dev runs old code on the new schema/grants.
+- Watch a pipeline with a background loop over the runs API (poll every 60 s); don't sleep in the foreground.
 
 ## Environment facts
-- AWS: single dev stage, account 920824005451, us-east-1 (D-031). Deploy via OIDC role `tasklane-gh-deploy-dev`
-  (`infra/bootstrap/github-oidc.json`; it can assume CDK roles, invoke `tasklane-dev-migrate`, read
-  `tasklane/dev/test-users/*`). Dev URL: CloudFront default domain (D-038), output `Url` of stack
-  `tasklane-dev-edge`. Cognito pool `tasklane-dev` (us-east-1_BW2gyuWcc, MFA **OPTIONAL**, SPA client with
-  `USER_PASSWORD_AUTH`, RemovalPolicy RETAIN). Test user secret `tasklane/dev/test-users/a` (hand-made, M0B-24).
-  Alerts → SNS email (confirmed). **Dev URL: https://d3qaglpzkbgmho.cloudfront.net**.
-- CloudFront sends IPv6 `CloudFront-Viewer-Address` **without brackets** (`2001:db8::7:443`); GitHub runners are IPv4
-  only, so Tier B cannot catch IPv6 bugs — check with `curl -6` from the Mac after auth changes.
-- Ad-hoc AWS work goes through the AWS MCP `run_script` sandbox: **no classes, no `logging`, no underscore
-  attribute names, no async generator expressions**; failing boto calls flood stderr (keep runs small); runs over
-  ~1 min become tasks — poll `get_tasks`, and parse large results from the saved file with python/jq.
-- Spike IaC is committed as templates under `spikes/*/infra` and deployed as throwaway stacks; delete after.
+- AWS: single dev stage, account **920824005451**, us-east-1 (D-031). **Mac**: static profile `avishek` (IAM user
+  `developer`): `export AWS_PROFILE=avishek AWS_REGION=us-east-1` (zsh doesn't word-split a `$P` flag variable).
+  AWS CLI 2.38 (pkg installer, not Homebrew). The AWS MCP connector may drop ("connection invalidated").
+- **Dev URL: https://d3qaglpzkbgmho.cloudfront.net** (output `Url` of `tasklane-dev-edge`, D-038).
+- Cognito pool `tasklane-dev` (us-east-1_BW2gyuWcc, RETAIN, MFA OPTIONAL — deferred to M9, D-045); **only client
+  `tasklane-dev-proxy`** (admin auth, 30-day refresh, revocation; D-048). Invite temp passwords valid 7 days.
+- Users on dev: bootstrap Admin **avishekdas.cool@gmail.com** (active; D-055); scripted test users
+  admin/member/viewer/outsider `tasklane-test-<name>@example.com` in secret `tasklane/dev/test-users/all` (D-049);
+  the hand-made user `a` is retired (row deactivated, Cognito disabled, its secret deleted 2026-11-02).
+- Deploy role `tasklane-gh-deploy-dev` = CloudFormation stack **`tasklane-github-oidc`** from
+  `infra/bootstrap/github-oidc.json`; changes are applied **by the user**:
+  `aws cloudformation deploy --template-file infra/bootstrap/github-oidc.json --stack-name tasklane-github-oidc --capabilities CAPABILITY_NAMED_IAM --profile avishek --region us-east-1`.
+  It may invoke `tasklane-dev-migrate` and `tasklane-dev-ip-probe`.
+- DB roles/secrets: `tasklane/dev/db/<role>` (tl_api_rw, tl_audit_writer, tl_reader, tl_worker*, tl_migrator).
+  Data API read from the Mac: `aws rds-data execute-statement --resource-arn <tasklane-dev-data-cluster… ARN>
+  --secret-arn <tl_api_rw ARN> --database tasklane --sql "…"`. The api role cannot read `tl.audit_events`.
+- Origin secret SSM `/tasklane/dev/origin-secret` (D-050); counters table `tasklane-dev-counters`.
+- Alarms email avishekdas.cool@gmail.com (D-040). Dev workers run hourly 08:00–19:00 New York (D-037).
+
+## Where things are
+- Plan `docs/04-plan/implementation-plan.md`; AC ownership `docs/04-plan/ac-ownership.md` (M1 owns 23 — AC-K7-1
+  moved to M9); requirements `docs/02-requirements/`; architecture `docs/03-architecture/` (07 security, 03 data,
+  04 API, 05 realtime, 02 deployment, `adr.md`); runbooks `ops/runbooks/` (incl. `bad-deploy.md`, `auth.md`, `cognito.md`).
+- Backend key modules: `platform/db.py` (`StrictDataApiFake(uri, role=…)`), `platform/mutation.py` (writable-CTE
+  builder: structural rules 2–4, `EPOCH_GUARD`, `ASSIGN_GUARD`), `platform/migrations.py` (lease, SCRAM),
+  `platform/counters.py`; `identity/` — `authz.py` (K1/K3 caps as data), `snapshot.py` (PermissionSnapshot),
+  `visibility.py` (VisibleItems + snapshot SQL), `auth_proxy.py`, `auth_backend.py` (Cognito + `FakeAuthBackend`
+  that is also a fake IdP), `users.py`, `account.py`, `audit.py`, `profile.py`, `bootstrap.py`, `test_identities.py`,
+  `viewer_ip.py`; `workmgmt/` — `workspaces.py`, `board_access.py`, `positions.py`, `boards.py`; `api/app.py`
+  (routes, `route_inventory()`, `_permissions_changed()`); `workers/` — `predeploy_hook.py`, `ip_probe.py`,
+  `bootstrap.py`, `test_identities.py`, `migrate.py`.
+- Tests that must grow with every new route: `tests/system/test_north_star_m1.py` (step 7: `READ_ROUTES`/`BODIES`)
+  and `tests/integration/identity/test_permissions_api.py` (AC-K3-4: every route declares its capability). The
+  grant table for `tl_api_rw` is `tests/integration/migrations/test_0007_api_grants.py` — new tables need a
+  migration grant **and** an entry there. Shared integration world: `tests/integration/world.py` (runs as
+  `tl_api_rw` / `tl_audit_writer`).
+- SPA: `web/src/auth.ts`, `api.ts`, `format.ts`, `ui/` (`App`, `LeftNav`, `UsersAdmin`, `AccountSettings`,
+  `Profile`, `BoardAccess`, `BoardView`), `sync/` (store/engine).
+- Nightly: `.github/workflows/nightly.yml` (500 rotating Tier A seeds, mutmut on authz/viewer_ip/positions ≥ 70 %
+  — 75 % now, Stryker on `sync/store.ts` ≥ 70 % — 93 % now; Stryker is installed per run, not in the lockfile).
 
 ## Gotchas and learnings (keep adding)
-- **Hand-built Lambda events must be tested against the real handler**: the pre-traffic hook's event lacked
-  `requestContext.stage`, Powertools raised, and the gate blocked a good deploy (4148c99). Also: an alias update
-  starts the CodeDeploy deployment, so CodeDeploy's hook-invoke policy must exist first (alias depends on the
-  group role). Deploy failures show in the `deploy` check-run annotations (CloudFormation events).
-- **Never push a red commit while the previous green's `ci` is still running**: `ci` cancels in-progress runs on
-  the branch, so the green is never deployed (happened with e048f14 → cancelled by 1bcba41). Wait for the green's
-  `ci` to finish (deploy may keep running) before pushing the next red.
-- **Desktop (Mac) sessions** have no `/home/claude` cloud clone: work, commit and `git push` directly in `~/tasklane`
-  (push works with the Mac's git credentials). Gates locally need `JSII_RUNTIME_PACKAGE_CACHE=disabled` (jsii refuses
-  the group-writable `~/Library/Caches`) and a one-off `npm ci` in `web/`. The AWS MCP connector can drop mid-session
-  ("connection invalidated" → user reconnects it). **On the Mac use the static profile `avishek`** (= account
-  920824005451, IAM user `developer`): `export AWS_PROFILE=avishek AWS_REGION=us-east-1` (zsh does not word-split a
-  `$P="--profile …"` variable). AWS CLI is 2.38 (pkg installer, not Homebrew). Data API reads: `aws rds-data
-  execute-statement` with secret `tasklane/dev/db/tl_api_rw` and the `tasklane-dev-data-cluster…` ARN.
-- moto: `revoke_token` is not implemented and pools ignore `UsernameConfiguration.CaseSensitive` (CognitoIdp
-  lower-cases emails itself); test revoke on the fake + Tier B.
-- The user prefers questions **one at a time**, each with the context needed to answer (AskUserQuestion has failed in
-  desktop sessions — ask in plain text with lettered options, recommendation first).
-- **Data API** (enforced by `StrictDataApiFake`): no array params (sets travel as JSON text); ints arrive as bigint
-  (cast `::int`); results: jsonb/json as text, numeric/uuid as strings, timestamps as UTC strings; `interval`,
-  `xid8`, `citext` results unsupported (cast to text); 64 KB row / 1 MiB response / 45 s statement; one statement
-  per call; commit/rollback take no `database`. Aurora 18.6 SLv2 min 0 ACU auto-pauses (first call may hit
-  `DatabaseResuming`, M0B-15 still open).
-- **Cognito (S-2b, measured)**: lockout is per user only (no per-caller/IP lock — the auth λ's shared egress IP is
-  fine); lock after the n-th evaluated failure = 2^(n−5) s; during a lock every attempt (right password too) gets
-  "Password attempts exceeded" and isn't counted; a success resets the counter. Under heavy parallel load locks
-  once ran longer than the schedule → always retry with margin.
-- **HTTP API integration limit 30 s**, api λ timeout 29 s → never wait > ~20 s in-request (D-043).
-- MFA is **deferred to M9** (D-045): the dev pool stays OPTIONAL. If it is ever enabled: docs say `UpdateUserPool`
-  cannot set `ON` but `SetUserPoolMfaConfig` can on an existing pool — unverified on AWS; probe a throwaway pool first.
-- WAF runs **before** viewer-request CloudFront Functions (S-2a, D-029); WAF itself is deferred to M6 (D-041), so
-  there is no CAPTCHA in M1–M5 (hence D-044).
-- Mutation builder rules (arch 03 §3.5) are still regex heuristics — M0B-5 (structural checks, edit_assigned guard
-  in `set_values`) is carried into M1.
-- Generated tests over `route_inventory()` grow automatically; authorization must run **before** body validation.
-- Dev workers run hourly 08:00–19:00 New York (D-037): a failed publish can take ~1 h to be swept on dev.
-- `make dev` = embedded Postgres + real api handler + local WebSocket (works in the cloud clone, not the device VM).
+- **Run tests as the deployed role.** The integration world runs as `tl_api_rw`; that caught `INSERT … RETURNING`
+  needing SELECT (tl.outbox). Superuser tests hide missing grants.
+- **Hand-built Lambda events must go through the real handler in a test** (the pre-traffic hook lacked
+  `requestContext.stage`; Powertools raised; the gate blocked a good deploy).
+- **CodeDeploy hooks**: the `live` alias update starts the deployment, so it must depend on the deployment group's
+  role (CodeDeploy's right to invoke the hook) — else "Internal error occurred".
+- **CDK cross-stack refs are CloudFormation exports**: deleting a resource another stack imports takes two deploys
+  (move consumers, then delete; a strict xfail guards the second step).
+- **npm lockfiles**: verify with `npm ci --cache <empty dir>`; a lockfile local npm accepts can still fail on the
+  runners ("Missing … from lock file"). Keep heavy tooling (Stryker) out of the app lockfile.
+- **IPv6**: CloudFront sends `CloudFront-Viewer-Address` without brackets (`2001:db8::7:443`); GitHub runners are
+  IPv4-only, so probe with `curl -6` from the Mac after auth changes.
+- **Snapshot cache** is per `Deps` instance, ≤ 30 s; routes that change permissions call `_permissions_changed()`;
+  writes are epoch-guarded and re-authorize once. `perm_epoch` moves only via `select tl.bump_perm_epoch()`.
+- **Auth proxy** lives in the api λ (D-051); `/api/auth/*` has no JWT authorizer, everything needs `x-tl-origin`.
+  Lockout counters: `signin#<email>#<ip>` (5/15 min) and `signin#<email>` (10/15 min → closed, Sev2); unknown emails
+  behave like wrong passwords. Tier B lockout checks use a random unknown email; the two-IP check uses `outsider`
+  and clears its counters through `tasklane-dev-ip-probe`.
+- **Data API** (enforced by `StrictDataApiFake`): no array params (JSON text), ints as bigint (cast `::int`), jsonb
+  results as text, 64 KB row / 1 MiB response / 45 s statement, one statement per call; `make_interval(days =>
+  :d::int)`. Dev Aurora auto-pauses (first call may hit `DatabaseResuming`).
+- **Cognito**: lockout per user only, lock 2^(n−5) s; moto lacks `revoke_token` and ignores case-insensitive
+  usernames (CognitoIdp lower-cases emails). HTTP API integration limit 30 s → never wait > ~20 s in-request.
+- **Mac disk**: test fixtures now drop each DB and remove the embedded-PG dir; if the disk fills again, look for
+  `$TMPDIR/tl-pg-*` (the user deletes them — the classifier blocks agent sweeps of shared temp).
+- Lint: `ruff` S608 flags SQL built by `+`/f-strings — build from constants with `.replace("__X__", CONST)`.
+- Local gates on the Mac need `JSII_RUNTIME_PACKAGE_CACHE=disabled`; `web/` needs one `npm ci` per checkout.
 
 ## Status
-- M0a done; M0b done (review `milestone-reviews/M0b.md`; Tier B run 40249155724).
-- **M1 in progress** (head 3daa63f, CI/deploy/Tier B 40391333302 green 2026-10-26):
-  - done: S-2b (`spikes/s2b/REPORT.md`; D-043 retry contract, D-044 interim account closure); north-star
-    contract + M1 kickoff (steps `1a.sign_in_create_workspace` Tier B `e2e/m1-sign-in-workspace.spec.ts` and
-    `7.viewer_read_only` Tier A — both expected failures); VisibleItems builder + rule-table harness
-    (15/15 builder mutants killed).
-  - **auth slice decided (D-045…D-049, 2026-10-26)**: no MFA in M1 (AC-K7-1 → M9); sub-stories, each red/green with
-    Tier B green between: (1) scripted test identities — dev-only custom resource, admin/member/viewer/outsider in one
-    secret `tasklane/dev/test-users/all`, `tl.users` rows, refused for prod; then retire hand-made user `a`;
-    (2) auth proxy `/api/auth/*` (07 §7.1 incl. D-043/D-044, SEC-5/SEC-6, refresh cookie 30 d), AC-K7-2 in Tier A via
-    injected `CloudFront-Viewer-Address`; (3) SPA on the proxy (direct `USER_PASSWORD_AUTH` removed);
-    (4) forgot/reset (Cognito default email) + revocation, AC-K7-3. Two-IP dev probe λ goes into the M1 system test.
-  - **sub-story 1 done** (6055181; Tier B 40380217106 green as the scripted admin). User `a` retired 2026-10-26:
-    `tl.users` id 1 deactivated, disabled in Cognito, secret `tasklane/dev/test-users/a` scheduled for deletion
-    (recoverable until 2026-11-02).
-  - **sub-story 2 done** (84e5fba; Tier B 40382795487 green incl. `e2e/auth-proxy.spec.ts` through real CloudFront +
-    Cognito: origin secret and `CloudFront-Viewer-Address` arrive, cookie set, 6th attempt → 429).
-  - **auth slice done**: sub-story 3 SPA on the proxy (f30caa3, Tier B 40385503152), sub-story 4 forgot/reset
-    AC-K7-3 (524196e, D-053) and phase 2 web-client deletion (4e72e4f, Tier B 40387581334; only `tasklane-dev-proxy`
-    left in the pool). Learning: CDK cross-stack refs become CloudFormation exports; removing a resource another stack imports needs
-    two deploys (switch consumers, then delete).
-  - sub-story 2 decisions: D-050 (origin secret in SSM), D-051 (proxy inside the api λ,
-    Cognito actions limited to AdminInitiateAuth + AdminUserGlobalSignOut), D-052 (per-browser sign-out +
-    `/api/v1/me/sign-out-everywhere`). Tier B `e2e/auth-proxy.spec.ts` uses a random unknown email per run for the
-    lockout check so no test user is ever locked.
-  - then: PermissionSnapshot + perm_epoch + tokens_valid_after, authz caps matrix (AC-K3-4) wired into every
-    route via VisibleItems (flips step 7), bootstrap admin, users/invites/deactivate, roles, workspaces & members,
-    board kinds & members, permission sets (no edit_assigned), audit events, left nav, profile/timezone;
-    M0b carried items (M0B-5/6/8/10/12 nightly 500-seed + mutation job/14/16/17); D-042 role rotation.
-  - not yet done from M0B-12: nightly 500-seed Tier A job and nightly mutation testing.
+- M0a done; M0b done (`milestone-reviews/M0b.md`).
+- **M1 — code complete, close pending** (2026-10-26). Owned ACs: 23 (all have tagged tests; AC-K1-1 partial —
+  create board/export/automation routes come in M2/M5; AC-F7-5 server side — live UI switch needs the M3
+  `permission.changed` event). North star: step 7 passes in Tier A; step 1a passes in Tier B (b24d1d0, run 40396216643).
+  Delivered (each red → green, Tier B green unless noted):
+  - auth slice: scripted test identities (6055181), auth proxy (84e5fba), SPA on proxy (f30caa3), forgot/reset
+    (524196e), old web client removed (4e72e4f); IPv6 fix (31a227d)
+  - permission framework + step 7 (3daa63f); workspaces + left nav + step 1a (b24d1d0); users/invites/roles
+    (e048f14) + bootstrap admin (f71d1b0); account settings + audit (ab676f3); board access + profile (97a3ffe)
+  - hardening bundle (d1bd4b7 + fixes 866ac9f, 4148c99, 2dbfe0a; D-057/D-058): migration 0007 grants, SCRAM
+    passwords, leased no-tx migrations, Mutation builder rules, pre-traffic hook, dashboard, bad-deploy runbook,
+    nightly; two-IP AC-K7-2 probe (9c3cc55); Cognito runbook + M0B-29 (7fcc738).
+  - **Dev is current and green on 2dbfe0a**: deploy-dev 40421710943, e2e-dev 40423088711 (Tier B incl.
+    `AC-K7-2 on dev: IP A 5×401 then 429; IP B 200 in 2.14s`); `live` = api version 20; sign-in OK over IPv4 + IPv6.
+    The two earlier attempts rolled back (alias/policy race 866ac9f; hook event bug 4148c99) — both fixed test-first.
+- **Next steps (in order):**
+  1. Check the first nightly run (`nightly` workflow, 06:00 UTC): 500 seeds, mutmut ≥ 70 %, Stryker ≥ 70 %; fix
+     test-first if red (a failing seed goes into `FIXED_SEEDS`).
+  2. Confirm the last push (hand-off docs) deployed green as well.
+  3. M1 close (plan §1.3): write `docs/04-plan/system-tests/M1.md` (evidence: run ids above, step 1a/7, AC list,
+     two-IP result, partial ACs), update the plan's M1 status line, then spawn an **independent review agent** to
+     write `docs/04-plan/milestone-reviews/M1.md`; fix blocking findings (red → green), get the user's approval.
+  4. Then M2 (boards, items, columns, table & views; 57 ACs): kickoff = strict-xfail steps `4a.assign_owner` and
+     `4b.deal_value_close_date`, then stories per plan §3 M2 — ask the user how to slice it.
+- Deferred (decided): MFA + AC-K7-1 → M9 (D-045); breached-password check → M9; D-042 secret rotation → P-launch
+  (D-057); WAF/CAPTCHA → M6 (D-041); a people directory for non-admin board owners → with the People column (M2).
