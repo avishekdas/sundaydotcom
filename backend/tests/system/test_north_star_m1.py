@@ -52,6 +52,8 @@ BODIES: dict[tuple[str, str], dict[str, Any]] = {
     ("PATCH", "/api/v1/workspaces/<workspace_id>"): {"name": "Renamed"},
     ("PUT", "/api/v1/workspaces/<workspace_id>/members/<user_id>"): {"role": "member"},
     ("POST", "/api/v1/boards/<board_id>/move"): {"before_id": None},
+    ("POST", "/api/v1/users"): {"email": "viewer-invite@example.com", "name": "V", "role": "member"},
+    ("PATCH", "/api/v1/users/<user_id>"): {"role": "member"},
 }
 
 

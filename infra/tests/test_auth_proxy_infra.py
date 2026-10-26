@@ -71,7 +71,16 @@ def test_api_lambda_gets_proxy_env_and_only_the_cognito_actions_it_uses(app: cdk
                 if x.startswith("cognito-idp:"):
                     actions.add(x)
                     assert st["Resource"] != "*"
-    assert actions == {"cognito-idp:AdminInitiateAuth", "cognito-idp:AdminUserGlobalSignOut"}  # D-051
+    assert actions == {  # D-051, extended for invites/deactivation (D-054)
+        "cognito-idp:AdminInitiateAuth",
+        "cognito-idp:AdminRespondToAuthChallenge",
+        "cognito-idp:AdminUserGlobalSignOut",
+        "cognito-idp:AdminCreateUser",
+        "cognito-idp:AdminDeleteUser",
+        "cognito-idp:AdminDisableUser",
+        "cognito-idp:AdminEnableUser",
+        "cognito-idp:AdminGetUser",
+    }
 
 
 def test_counters_table_is_on_demand_with_ttl(app: cdk.App) -> None:
@@ -106,3 +115,13 @@ def test_cloudfront_sends_the_origin_secret_to_the_api(app: cdk.App) -> None:
     origin = next(o for o in cfg["Origins"] if o["Id"] == api_origin)
     headers = {h["HeaderName"]: h["HeaderValue"] for h in origin.get("OriginCustomHeaders", [])}
     assert "x-tl-origin" in headers and "resolve:ssm:" in str(headers["x-tl-origin"])
+
+
+def test_invites_last_7_days_with_a_tasklane_message(app: cdk.App) -> None:
+    """F1.1: invitation valid 7 days; Cognito sends the invite email (D-054)."""
+    t = template(app, "tasklane-dev-identity")
+    pool = next(iter(t.find_resources("AWS::Cognito::UserPool").values()))["Properties"]
+    assert pool["Policies"]["PasswordPolicy"]["TemporaryPasswordValidityDays"] == 7
+    invite = pool["AdminCreateUserConfig"]["InviteMessageTemplate"]
+    assert "Tasklane" in invite["EmailSubject"]
+    assert "{username}" in invite["EmailMessage"] and "{####}" in invite["EmailMessage"]

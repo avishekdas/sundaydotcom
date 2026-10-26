@@ -3,7 +3,7 @@
  * browser, access token in memory only, refresh token only in the HttpOnly cookie (never in web storage).
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthError, forgotPassword, refresh, resetPassword, signIn, signOut } from "./auth";
+import { acceptInvite, AuthError, forgotPassword, refresh, resetPassword, signIn, signOut } from "./auth";
 
 type Reply = { status: number; body?: unknown; headers?: Record<string, string> };
 
@@ -105,6 +105,19 @@ describe("auth via /api/auth", () => {
                                                        fields: { code: "Invalid or expired code" } } } });
     await expect(resetPassword("raj@example.com", "0", "x")).rejects.toMatchObject({
       status: 400, fields: { code: "Invalid or expired code" },
+    });
+  });
+
+  it("returns the new-password challenge for an invitee, then accepts the invite (F1.2)", async () => {
+    let calls = mockFetch({ status: 200, body: { challenge: "new_password_required", session: "sess-1" } });
+    const r = await signIn("new@example.com", "Temp-Password-1");
+    expect(r).toEqual({ challenge: "new_password_required", session: "sess-1" });
+    calls = mockFetch(ok);
+    const s = await acceptInvite("new@example.com", "sess-1", "Brand-New-Password-7");
+    expect(s.accessToken).toBe("at-1");
+    expect(calls[0]!.url).toBe("/api/auth/accept-invite");
+    expect(JSON.parse(String(calls[0]!.init.body))).toEqual({
+      email: "new@example.com", session: "sess-1", new_password: "Brand-New-Password-7",
     });
   });
 });

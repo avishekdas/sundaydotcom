@@ -95,3 +95,30 @@ def test_forgot_swallows_unknown_users_and_reset_maps_errors() -> None:
         CognitoAuth(Stub(("InvalidPasswordException", "Password did not conform")), "p", "c").confirm_reset(
             "a@example.com", "1", "pw"
         )
+
+
+def test_new_password_challenge_and_expired_invite() -> None:
+    from tasklane.identity.auth_backend import InviteExpired, NewPasswordRequired
+
+    class Challenge(Stub):
+        def admin_initiate_auth(self, **kw: Any) -> dict[str, Any]:
+            return {"ChallengeName": "NEW_PASSWORD_REQUIRED", "Session": "sess-1"}
+
+        def admin_respond_to_auth_challenge(self, **kw: Any) -> dict[str, Any]:
+            self.calls.append(("admin_respond_to_auth_challenge", kw))
+            return {"AuthenticationResult": {"AccessToken": "at", "ExpiresIn": 1800, "RefreshToken": "rt"}}
+
+    with pytest.raises(NewPasswordRequired) as e:
+        CognitoAuth(Challenge(), "p", "c").sign_in("A@example.com", "temp")
+    assert e.value.session == "sess-1"
+    s = Challenge()
+    t = CognitoAuth(s, "p", "c").complete_new_password("A@example.com", "sess-1", "Brand-New-Password-7")
+    assert t.refresh_token == "rt"
+    kw = s.calls[0][1]
+    assert (
+        kw["ChallengeName"] == "NEW_PASSWORD_REQUIRED"
+        and kw["ChallengeResponses"]["USERNAME"] == "a@example.com"
+    )
+    msg = "Temporary password has expired and must be reset by an administrator."
+    with pytest.raises(InviteExpired):
+        CognitoAuth(Stub(("NotAuthorizedException", msg)), "p", "c").sign_in("a@example.com", "temp")

@@ -184,6 +184,13 @@ WORKSPACE_ROUTES = {  # authorized by workspace role / account caps; behaviour i
     ("DELETE", "/api/v1/workspaces/<workspace_id>/members/<user_id>"),
     ("POST", "/api/v1/boards/<board_id>/move"),
 }
+ADMIN_ROUTES = {  # account administration (K1: Admin only); behaviour in identity/test_users_api.py
+    ("GET", "/api/v1/users"),
+    ("POST", "/api/v1/users"),
+    ("PATCH", "/api/v1/users/<user_id>"),
+    ("DELETE", "/api/v1/users/<user_id>"),
+    ("POST", "/api/v1/users/<user_id>/resend-invite"),
+}
 SELF_ROUTES = {  # any active user, about themselves
     ("GET", "/api/v1/me"),
     ("POST", "/api/v1/realtime/ticket"),
@@ -199,7 +206,7 @@ ROLES = {"ada": "admin", "mia": "member", "raj": "member", "vic": "viewer"}
 
 def test_every_route_declares_its_capability() -> None:
     authed = {r for r in route_inventory() if not r[1].startswith("/api/auth/")}
-    assert authed == set(BOARD_ROUTES) | SELF_ROUTES | WORKSPACE_ROUTES
+    assert authed == set(BOARD_ROUTES) | SELF_ROUTES | WORKSPACE_ROUTES | ADMIN_ROUTES
 
 
 def _expected(who: str, board: int, cap: Cap) -> str:
